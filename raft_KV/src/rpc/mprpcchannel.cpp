@@ -1,9 +1,13 @@
 #include "mprpcchannel.h"
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cerrno>
+#include <chrono>
+#include <cstring>
 #include <string>
 #include "mprpccontroller.h"
 #include "rpcheader.pb.h"
@@ -81,20 +85,18 @@ void MprpcChannel::CallMethod(const google::protobuf::MethodDescriptor* method,
   //    std::cout << "args_str: " << args_str << std::endl;
   //    std::cout << "============================================" << std::endl;
 
-  // 发送rpc请求
-  //失败会重试连接再发送，重试连接失败会直接return
-  while (-1 == send(m_clientFd, send_rpc_str.c_str(), send_rpc_str.size(), 0)) {
-    char errtxt[512] = {0};
-    sprintf(errtxt, "send error! errno:%d", errno);
-    std::cout << "尝试重新连接，对方ip：" << m_ip << " 对方端口" << m_port << std::endl;
-    close(m_clientFd);
-    m_clientFd = -1;
-    std::string errMsg;
-    bool rt = newConnect(m_ip.c_str(), m_port, &errMsg);
-    if (!rt) {
-      controller->SetFailed(errMsg);
+  size_t sent = 0;
+  while (sent < send_rpc_str.size()) {
+    const auto written = send(m_clientFd, send_rpc_str.data() + sent, send_rpc_str.size() - sent, 0);
+    if (written <= 0) {
+      char errtxt[512] = {0};
+      sprintf(errtxt, "send error! errno:%d", errno);
+      close(m_clientFd);
+      m_clientFd = -1;
+      controller->SetFailed(errtxt);
       return;
     }
+    sent += static_cast<size_t>(written);
   }
   /*
   从时间节点来说，这里将请求发送过去之后rpc服务的提供者就会开始处理，返回的时候就代表着已经返回响应了
@@ -134,12 +136,47 @@ bool MprpcChannel::newConnect(const char* ip, uint16_t port, string* errMsg) {
     return false;
   }
 
+  if (!configureSocketTimeout(clientfd, errMsg)) {
+    close(clientfd);
+    m_clientFd = -1;
+    return false;
+  }
+
   struct sockaddr_in server_addr;
   server_addr.sin_family = AF_INET;
   server_addr.sin_port = htons(port);
   server_addr.sin_addr.s_addr = inet_addr(ip);
-  // 连接rpc服务节点
-  if (-1 == connect(clientfd, (struct sockaddr*)&server_addr, sizeof(server_addr))) {
+  bool connected = false;
+  if (m_timeout > std::chrono::milliseconds::zero()) {
+    const int originalFlags = fcntl(clientfd, F_GETFL, 0);
+    if (originalFlags == -1 || fcntl(clientfd, F_SETFL, originalFlags | O_NONBLOCK) == -1) {
+      *errMsg = "set nonblocking connect failed";
+    } else if (connect(clientfd, reinterpret_cast<struct sockaddr*>(&server_addr), sizeof(server_addr)) == 0) {
+      connected = true;
+    } else if (errno == EINPROGRESS) {
+      pollfd pollFd{};
+      pollFd.fd = clientfd;
+      pollFd.events = POLLOUT;
+      const int pollResult = poll(&pollFd, 1, static_cast<int>(m_timeout.count()));
+      int connectError = 0;
+      socklen_t errorLength = sizeof(connectError);
+      if (pollResult > 0 && getsockopt(clientfd, SOL_SOCKET, SO_ERROR, &connectError, &errorLength) == 0 &&
+          connectError == 0) {
+        connected = true;
+      } else if (pollResult == 0) {
+        errno = ETIMEDOUT;
+      } else if (connectError != 0) {
+        errno = connectError;
+      }
+    }
+    if (originalFlags != -1) {
+      fcntl(clientfd, F_SETFL, originalFlags);
+    }
+  } else {
+    connected = connect(clientfd, reinterpret_cast<struct sockaddr*>(&server_addr), sizeof(server_addr)) == 0;
+  }
+
+  if (!connected) {
     close(clientfd);
     char errtxt[512] = {0};
     sprintf(errtxt, "connect fail! errno:%d", errno);
@@ -151,7 +188,45 @@ bool MprpcChannel::newConnect(const char* ip, uint16_t port, string* errMsg) {
   return true;
 }
 
-MprpcChannel::MprpcChannel(string ip, short port, bool connectNow) : m_ip(ip), m_port(port), m_clientFd(-1) {
+bool MprpcChannel::configureSocketTimeout(int fd, string* errMsg) const {
+  if (m_timeout <= std::chrono::milliseconds::zero()) {
+    return true;
+  }
+
+  const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(m_timeout);
+  const auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(m_timeout - seconds);
+  timeval timeout{};
+  timeout.tv_sec = seconds.count();
+  timeout.tv_usec = microseconds.count();
+  if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout)) == -1 ||
+      setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == -1) {
+    char errtxt[512] = {0};
+    sprintf(errtxt, "set socket timeout failed! errno:%d", errno);
+    *errMsg = errtxt;
+    return false;
+  }
+  return true;
+}
+
+void MprpcChannel::SetTimeout(std::chrono::milliseconds timeout) {
+  m_timeout = timeout;
+  if (m_clientFd != -1) {
+    std::string ignored;
+    if (!configureSocketTimeout(m_clientFd, &ignored)) {
+      close(m_clientFd);
+      m_clientFd = -1;
+    }
+  }
+}
+
+MprpcChannel::~MprpcChannel() {
+  if (m_clientFd != -1) {
+    close(m_clientFd);
+  }
+}
+
+MprpcChannel::MprpcChannel(string ip, short port, bool connectNow)
+    : m_ip(ip), m_port(port), m_clientFd(-1), m_timeout(std::chrono::milliseconds::zero()) {
   // 使用tcp编程，完成rpc方法的远程调用，使用的是短连接，因此每次都要重新连接上去，待改成长连接。
   // 没有连接或者连接已经断开，那么就要重新连接呢,会一直不断地重试
   // 读取配置文件rpcserver的信息
@@ -161,7 +236,7 @@ MprpcChannel::MprpcChannel(string ip, short port, bool connectNow) : m_ip(ip), m
   //  /UserServiceRpc/Login
   if (!connectNow) {
     return;
-  }  //可以允许延迟连接
+  }  // 可以允许延迟连接
   std::string errMsg;
   auto rt = newConnect(ip.c_str(), port, &errMsg);
   int tryCount = 3;

@@ -46,6 +46,21 @@ add_subdirectory(example)
 
 add_library(skip_list_on_raft STATIC  ${src_rpc} ${src_fiber} ${rpc_example} ${raftsource} ${src_raftCore} ${src_raftRpcPro})
 target_link_libraries(skip_list_on_raft muduo_net muduo_base pthread dl)
+
+add_library(raft_kv_client STATIC ${src_raftClerk})
+target_link_libraries(raft_kv_client
+                      PUBLIC skip_list_on_raft rpc_lib protobuf::libprotobuf boost_serialization muduo_net muduo_base
+                             pthread dl)
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(clerk_deadline_test test/clerk_deadline_test.cpp)
+  target_include_directories(clerk_deadline_test PRIVATE ${PROJECT_SOURCE_DIR}/src/raftClerk/include)
+  target_link_libraries(clerk_deadline_test PRIVATE raft_kv_client)
+  add_test(NAME clerk_deadline_test COMMAND clerk_deadline_test)
+  set_tests_properties(clerk_deadline_test PROPERTIES WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+endif()
+
 # 添加格式化目标 start
 # from : https://blog.csdn.net/guotianqing/article/details/121661067
 
