@@ -2,9 +2,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <mutex>
+#include <memory>
 #include <string>
 #include <vector>
-#include <mutex>
+
+#include <nlohmann/json.hpp>
 
 /**
  * @brief PVP 对局房间
@@ -16,6 +19,8 @@
 class GameRoom
 {
 public:
+    using Json = nlohmann::json;
+
     static const int BOARD_SIZE = 15;
 
     GameRoom(int roomId, int player1Id, int player2Id);
@@ -84,6 +89,21 @@ public:
      * @brief 获取完整游戏状态的 JSON 字符串
      */
     std::string getGameStateJson() const;
+
+    /**
+     * @brief 获取可持久化的完整对局快照
+     *
+     * 一个快照对应某一时刻的完整状态，因此在同一把锁下读取所有字段，
+     * 避免棋盘和回合来自不同的落子前后状态。
+     */
+    Json snapshot() const;
+
+    /**
+     * @brief 从已提交的完整快照恢复对局
+     *
+     * 仅接受由 snapshot() 写出的字段，调用方应将解析或存储错误作为恢复失败处理。
+     */
+    static std::shared_ptr<GameRoom> fromSnapshot(const Json& snapshot);
 
 private:
     bool isValidMove(int x, int y) const;

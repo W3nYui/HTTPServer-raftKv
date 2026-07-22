@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(simple_server)
 
+enable_testing()
+
 # 设置 C++ 标准
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -73,6 +75,15 @@ target_link_libraries(simple_server
     ssl
     crypto
 )
+
+add_executable(game_room_test
+    WebApps/GomokuServer/test/GameRoomTest.cpp
+    WebApps/GomokuServer/src/GameRoom.cpp
+)
+
+target_include_directories(game_room_test PRIVATE WebApps/GomokuServer/include)
+
+add_test(NAME game_room_test COMMAND game_room_test)
 
 # 打印调试信息
 message(STATUS "Include directories:")

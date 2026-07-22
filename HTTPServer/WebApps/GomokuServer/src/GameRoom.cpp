@@ -1,7 +1,5 @@
 #include "../include/GameRoom.h"
 
-#include <sstream>
-
 GameRoom::GameRoom(int roomId, int player1Id, int player2Id)
     : roomId_(roomId)
     , player1_(player1Id)
@@ -120,43 +118,49 @@ bool GameRoom::isInBoard(int x, int y) const
 }
 
 // ========== JSON 序列化 ==========
-std::string GameRoom::getBoardJson() const
+GameRoom::Json GameRoom::snapshot() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    std::ostringstream oss;
-    oss << "[";
-    for (int x = 0; x < BOARD_SIZE; x++)
-    {
-        if (x > 0) oss << ",";
-        oss << "[";
-        for (int y = 0; y < BOARD_SIZE; y++)
-        {
-            if (y > 0) oss << ",";
-            oss << "\"" << board_[x][y] << "\"";
-        }
-        oss << "]";
-    }
-    oss << "]";
-    return oss.str();
+    // Copy every persisted field while holding one lock so a move cannot split the snapshot.
+    return Json{
+        {"roomId", roomId_},
+        {"player1", player1_},
+        {"player2", player2_},
+        {"currentTurn", currentTurn_},
+        {"moveCount", moveCount_},
+        {"gameOver", gameOver_},
+        {"winner", winner_},
+        {"winnerReason", winnerReason_},
+        {"lastMove", {{"x", lastMove_.first}, {"y", lastMove_.second}}},
+        {"board", board_},
+    };
+}
+
+std::shared_ptr<GameRoom> GameRoom::fromSnapshot(const Json& snapshot)
+{
+    auto room = std::make_shared<GameRoom>(snapshot.at("roomId").get<int>(),
+                                           snapshot.at("player1").get<int>(),
+                                           snapshot.at("player2").get<int>());
+
+    std::lock_guard<std::mutex> lock(room->mutex_);
+    // Restore the complete committed state rather than replaying moves during application recovery.
+    room->currentTurn_ = snapshot.at("currentTurn").get<int>();
+    room->moveCount_ = snapshot.at("moveCount").get<int>();
+    room->gameOver_ = snapshot.at("gameOver").get<bool>();
+    room->winner_ = snapshot.at("winner").get<int>();
+    room->winnerReason_ = snapshot.at("winnerReason").get<std::string>();
+    room->lastMove_ = {snapshot.at("lastMove").at("x").get<int>(), snapshot.at("lastMove").at("y").get<int>()};
+    room->board_ = snapshot.at("board").get<std::vector<std::vector<std::string>>>();
+    return room;
+}
+
+std::string GameRoom::getBoardJson() const
+{
+    return snapshot().at("board").dump();
 }
 
 std::string GameRoom::getGameStateJson() const
 {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    std::ostringstream oss;
-    oss << "{"
-        << "\"roomId\":" << roomId_ << ","
-        << "\"player1\":" << player1_ << ","
-        << "\"player2\":" << player2_ << ","
-        << "\"currentTurn\":" << currentTurn_ << ","
-        << "\"moveCount\":" << moveCount_ << ","
-        << "\"gameOver\":" << (gameOver_ ? "true" : "false") << ","
-        << "\"winner\":" << winner_ << ","
-        << "\"winnerReason\":\"" << winnerReason_ << "\","
-        << "\"lastMove\":{\"x\":" << lastMove_.first << ",\"y\":" << lastMove_.second << "},"
-        << "\"board\":" << getBoardJson()
-        << "}";
-    return oss.str();
+    return snapshot().dump();
 }
