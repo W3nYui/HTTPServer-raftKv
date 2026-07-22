@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋</title>
+    <style>
+        body {
+            margin: 0; padding: 0; box-sizing: border-box;
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            background-color: #1e1e2f; color: #fff; overflow-x: hidden;
+        }
+        #loading-container {
+            display: flex; flex-direction: column; justify-content: center;
+            align-items: center; height: 100vh; text-align: center;
+        }
+        #loading-title { font-size: 2em; margin-bottom: 20px; color: #00c3ff; text-shadow: 0 0 5px #00c3ff, 0 0 10px #008bff; }
+        .progress-bar { width: 300px; height: 20px; background: #444; border-radius: 10px; overflow: hidden; box-shadow: 0 0 10px #000; }
+        .progress-bar-inner { height: 100%; background: linear-gradient(to right, #00c3ff, #00e1ff); width: 0; transition: width 1.5s ease; }
+        #loading-text { margin-top: 15px; font-size: 1.2em; color: #ccc; }
+        #menu-container { display: none; padding: 30px 20px; max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 2.5em; margin-bottom: 10px; color: #00c3ff; text-shadow: 0 0 5px #00c3ff, 0 0 10px #008bff; text-align: center; }
+        #content-area { display: flex; gap: 25px; margin-top: 20px; flex-wrap: wrap; justify-content: center; }
+        #menu-options { min-width: 220px; }
+        .menu-option { margin: 12px 0; font-size: 1.4em; color: #fff; cursor: pointer; padding: 10px 20px; border-radius: 8px; background: #2a2a3e; transition: all 0.3s ease; text-align: center; }
+        .menu-option:hover { background: #3a3a5e; color: #00e1ff; box-shadow: 0 0 10px rgba(0, 195, 255, 0.3); }
+        #menu-title-section { text-align: center; }
+        #welcome-msg { font-size: 1.1em; color: #aaa; margin-bottom: 20px; }
+        #lobby-chat { flex: 1; min-width: 300px; max-width: 450px; display: flex; flex-direction: column; height: 400px; background: #2a2a3e; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); overflow: hidden; }
+        #lobby-chat-header { padding: 10px 15px; background: #33334d; font-size: 1em; font-weight: bold; color: #00c3ff; border-bottom: 1px solid #444; }
+        #lobby-chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+        .chat-msg { font-size: 0.85em; line-height: 1.4; word-break: break-word; }
+        .chat-msg .sender { color: #00c3ff; font-weight: bold; }
+        .chat-msg .system-msg { color: #ffaa00; font-style: italic; }
+        .chat-msg .time { color: #888; font-size: 0.75em; margin-left: 5px; }
+        #lobby-chat-input-area { display: flex; padding: 8px; gap: 5px; border-top: 1px solid #444; }
+        #lobby-chat-input { flex: 1; padding: 8px 10px; font-size: 0.9em; border: none; border-radius: 5px; background: #444; color: #fff; outline: none; font-family: "Microsoft YaHei", Arial, sans-serif; }
+        #lobby-chat-input:focus { background: #555; }
+        #lobby-send-btn { padding: 8px 15px; font-size: 0.9em; border: none; border-radius: 5px; background: #00c3ff; color: #1e1e2f; cursor: pointer; font-family: "Microsoft YaHei", Arial, sans-serif; }
+        #lobby-send-btn:hover { background: #00e1ff; }
+        @media (max-width: 600px) {
+            #content-area { flex-direction: column; align-items: center; }
+            #lobby-chat { width: 100%; height: 300px; }
+            h1 { font-size: 2em; }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading-container">
+        <div id="loading-title">五子棋</div>
+        <div class="progress-bar"><div class="progress-bar-inner"></div></div>
+        <div id="loading-text">加载中...</div>
+    </div>
+
+    <div id="menu-container">
+        <div id="menu-title-section">
+            <h1>欢迎来到五子棋</h1>
+            <div id="welcome-msg"></div>
+        </div>
+        <div id="content-area">
+            <div id="menu-options">
+                <div class="menu-option" id="play-ai">[1] 对战AI</div>
+                <div class="menu-option" id="play-pvp">[2] 匹配玩家</div>
+                <div class="menu-option" id="exit-game">[0] 退出游戏</div>
+            </div>
+            <div id="lobby-chat">
+                <div id="lobby-chat-header">大厅聊天</div>
+                <div id="lobby-chat-messages"></div>
+                <div id="lobby-chat-input-area">
+                    <input type="text" id="lobby-chat-input" placeholder="输入聊天消息..." maxlength="200">
+                    <button id="lobby-send-btn">发送</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        // ===== 从服务端注入的变量中获取用户信息 =====
+        var myUserId   = (typeof INJECTED_USERID   !== 'undefined') ? INJECTED_USERID   : sessionStorage.getItem('userId');
+        var myUsername = (typeof INJECTED_USERNAME !== 'undefined') ? INJECTED_USERNAME : (sessionStorage.getItem('username') || ('User' + myUserId));
+
+        if (!myUserId || myUserId === 'null') { window.location.href = '/entry'; return; }
+
+        // ===== 获取所有关键DOM元素 =====
+        var el = {
+            progressBar:   document.querySelector('.progress-bar-inner'),
+            loadingCont:   document.getElementById('loading-container'),
+            menuCont:      document.getElementById('menu-container'),
+            welcomeMsg:    document.getElementById('welcome-msg'),
+            chatMessages:  document.getElementById('lobby-chat-messages'),
+            chatInput:     document.getElementById('lobby-chat-input'),
+            sendBtn:       document.getElementById('lobby-send-btn'),
+            playAi:        document.getElementById('play-ai'),
+            playPvp:       document.getElementById('play-pvp'),
+            exitGame:      document.getElementById('exit-game')
+        };
+
+        // 检查关键元素存在性
+        if (!el.progressBar || !el.loadingCont || !el.menuCont) { return; }
+
+        // 设置欢迎语
+        if (el.welcomeMsg) { el.welcomeMsg.textContent = '你好，' + myUsername + '！'; }
+
+        // ===== WebSocket =====
+        var lobbyWs = null;
+
+        function connectLobbyWs() {
+            var proto = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
+            var url = proto + '//' + window.location.host + '/ws';
+            console.log('[menu] connecting WebSocket:', url);
+            lobbyWs = new WebSocket(url);
+
+            lobbyWs.onopen = function() {
+                console.log('[menu] WebSocket connected');
+                if (el.chatMessages) {
+                    addMsg('system', '已连接到大厅聊天');
+                }
+            };
+
+            lobbyWs.onmessage = function(e) {
+                try {
+                    var m = JSON.parse(e.data);
+                    console.log('[menu] WS received:', m.type);
+                    if (m.type === 'lobby_broadcast') {
+                        addMsg('user', m.message, m.username);
+                    } else if (m.type === 'system_message') {
+                        addMsg('system', m.message);
+                    }
+                } catch(ex) {
+                    console.error('[menu] WS parse error:', ex);
+                }
+            };
+
+            lobbyWs.onclose = function() {
+                console.log('[menu] WebSocket closed');
+            };
+
+            lobbyWs.onerror = function(err) {
+                console.error('[menu] WebSocket error');
+            };
+        }
+
+        // ===== 聊天 =====
+        function sendMsg() {
+            if (!el.chatInput) return;
+            var text = el.chatInput.value.trim();
+            if (!text) return;
+            if (!lobbyWs || lobbyWs.readyState !== WebSocket.OPEN) {
+                console.log('[menu] WS not connected, dropping message');
+                return;
+            }
+            el.chatInput.value = '';
+            var payload = JSON.stringify({ type: 'chat_lobby', username: myUsername, message: text });
+            console.log('[menu] sending chat:', payload);
+            lobbyWs.send(payload);
+        }
+
+        function addMsg(type, text, sender) {
+            if (!el.chatMessages) return;
+            var div = document.createElement('div');
+            div.className = 'chat-msg';
+            var d = new Date();
+            var ts = [d.getHours(), d.getMinutes(), d.getSeconds()].map(function(n){ return String(n).padStart(2,'0'); }).join(':');
+            var safe = escapeHtml(text);
+            if (type === 'system') {
+                div.innerHTML = '<span class="system-msg">[系统] ' + safe + '</span><span class="time">' + ts + '</span>';
+            } else {
+                div.innerHTML = '<span class="sender">' + escapeHtml(sender || '') + ':</span> ' + safe + '<span class="time">' + ts + '</span>';
+            }
+            el.chatMessages.appendChild(div);
+            el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+        }
+
+        function escapeHtml(s) {
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        // ===== 加载动画 =====
+        void el.progressBar.offsetWidth;
+        el.progressBar.style.width = '100%';
+        el.progressBar.addEventListener('transitionend', function() {
+            el.loadingCont.style.display = 'none';
+            el.menuCont.style.display = 'block';
+            connectLobbyWs();
+        });
+        setTimeout(function() {
+            if (el.loadingCont.style.display !== 'none') {
+                el.loadingCont.style.display = 'none';
+                el.menuCont.style.display = 'block';
+                connectLobbyWs();
+            }
+        }, 2000);
+
+        // ===== 事件绑定 =====
+        if (el.sendBtn)        el.sendBtn.addEventListener('click', sendMsg);
+        if (el.chatInput)      el.chatInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') sendMsg(); });
+        if (el.playPvp)        el.playPvp.addEventListener('click', function() { window.location.href = '/pvp'; });
+        if (el.playAi)         el.playAi.addEventListener('click', function() {
+            fetch('/aiBot/start', { method: 'GET', headers: { 'Accept': 'text/html' } })
+                .then(function(r) { return r.text(); })
+                .then(function(html) { document.open(); document.write(html); document.close(); })
+                .catch(function(e) { console.error(e); alert('启动AI对战失败'); });
+        });
+        if (el.exitGame)       el.exitGame.addEventListener('click', function() {
+            if (lobbyWs && lobbyWs.readyState === WebSocket.OPEN) lobbyWs.close();
+            sessionStorage.clear();
+            window.location.href = '/entry';
+        });
+
+        window.addEventListener('beforeunload', function() {
+            if (lobbyWs && lobbyWs.readyState === WebSocket.OPEN) lobbyWs.close();
+        });
+
+    })();
+    </script>
+</body>
+</html>

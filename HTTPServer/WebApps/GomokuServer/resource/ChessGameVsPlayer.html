@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋 - PVP对战</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: "Microsoft YaHei", Arial, sans-serif; background-color: #1e1e2f; color: #fff; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 10px; }
+        #top-bar { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 900px; margin-bottom: 10px; padding: 8px 20px; background: #2a2a3e; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); flex-wrap: wrap; gap: 10px; }
+        #room-info { font-size: 1.1em; color: #00c3ff; }
+        #turn-indicator { font-size: 1.1em; font-weight: bold; padding: 5px 15px; border-radius: 20px; transition: all 0.3s ease; }
+        .your-turn { background: #00c3ff; color: #1e1e2f; animation: pulse 1.5s infinite; }
+        .opponent-turn { background: #555; color: #aaa; }
+        @keyframes pulse { 0%,100% { box-shadow: 0 0 5px #00c3ff; } 50% { box-shadow: 0 0 20px #00c3ff; } }
+        #main-area { display: flex; gap: 20px; width: 100%; max-width: 900px; flex-wrap: wrap; justify-content: center; }
+        #board { display: grid; grid-template-columns: repeat(15, 32px); grid-template-rows: repeat(15, 32px); gap: 1px; background: #333; padding: 5px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .cell { width: 32px; height: 32px; background: #deb887; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s ease; }
+        .cell:hover { background: #d4a76a; }
+        .cell.black-stone, .cell.white-stone { cursor: default; }
+        .black-stone::after { content: ''; width: 26px; height: 26px; background: radial-gradient(circle, #555, #000); border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
+        .white-stone::after { content: ''; width: 26px; height: 26px; background: radial-gradient(circle, #fff, #ccc); border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.3); }
+        .last-move { outline: 2px solid #ff6600; outline-offset: -2px; border-radius: 3px; }
+        .btn { padding: 8px 20px; font-size: 0.95em; border: none; border-radius: 5px; cursor: pointer; transition: all 0.3s ease; font-family: "Microsoft YaHei", Arial, sans-serif; }
+        .btn-primary { background: #00c3ff; color: #1e1e2f; }
+        .btn-primary:hover { background: #00e1ff; box-shadow: 0 0 10px #00c3ff; }
+        .btn-secondary { background: #555; color: #fff; }
+        .btn-secondary:hover { background: #777; }
+        .btn-danger { background: #ff4444; color: #fff; }
+        .btn-danger:hover { background: #ff6666; }
+        #chat-container { display: flex; flex-direction: column; width: 280px; height: 560px; background: #2a2a3e; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); overflow: hidden; }
+        #chat-header { padding: 10px 15px; background: #33334d; font-size: 1em; font-weight: bold; color: #00c3ff; border-bottom: 1px solid #444; }
+        #chat-messages { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+        .chat-msg { font-size: 0.85em; line-height: 1.4; word-break: break-word; }
+        .chat-msg .sender { color: #00c3ff; font-weight: bold; }
+        .chat-msg .system-msg { color: #ffaa00; font-style: italic; }
+        .chat-msg .time { color: #888; font-size: 0.75em; margin-left: 5px; }
+        #chat-input-area { display: flex; padding: 8px; gap: 5px; border-top: 1px solid #444; }
+        #chat-input { flex: 1; padding: 8px 10px; font-size: 0.9em; border: none; border-radius: 5px; background: #444; color: #fff; outline: none; font-family: "Microsoft YaHei", Arial, sans-serif; }
+        #chat-input:focus { background: #555; }
+        #send-btn { padding: 8px 15px; font-size: 0.9em; border: none; border-radius: 5px; background: #00c3ff; color: #1e1e2f; cursor: pointer; font-family: "Microsoft YaHei", Arial, sans-serif; }
+        #send-btn:hover { background: #00e1ff; }
+        #game-over-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+        #game-over-dialog { background: #2a2a3e; padding: 30px; border-radius: 15px; text-align: center; box-shadow: 0 0 30px rgba(0,195,255,0.3); }
+        #game-over-dialog h2 { font-size: 1.8em; margin-bottom: 15px; color: #00c3ff; }
+        #game-over-dialog p { font-size: 1.1em; margin-bottom: 20px; color: #ccc; }
+        #match-waiting { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 999; justify-content: center; align-items: center; }
+        #match-waiting-dialog { background: #2a2a3e; padding: 30px; border-radius: 15px; text-align: center; box-shadow: 0 0 30px rgba(0,195,255,0.3); }
+        #match-waiting-dialog p { font-size: 1.2em; margin-bottom: 15px; color: #00c3ff; }
+        .spinner { width: 40px; height: 40px; margin: 0 auto 15px; border: 4px solid #444; border-top: 4px solid #00c3ff; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @media (max-width: 650px) {
+            #main-area { flex-direction: column; align-items: center; }
+            #board { grid-template-columns: repeat(15, 24px); grid-template-rows: repeat(15, 24px); }
+            .cell { width: 24px; height: 24px; }
+            .black-stone::after, .white-stone::after { width: 20px; height: 20px; }
+            #chat-container { width: 100%; height: 300px; }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="top-bar">
+        <div id="room-info">房间: 等待匹配...</div>
+        <div id="turn-indicator" class="opponent-turn">等待对手</div>
+        <div id="player-color" style="font-size: 0.95em;"></div>
+    </div>
+
+    <div id="main-area">
+        <div id="board-container">
+            <div id="board"></div>
+            <div style="display:flex; gap:10px; margin-top:5px;">
+                <button class="btn btn-secondary" onclick="returnToMenu()">返回菜单</button>
+            </div>
+        </div>
+        <div id="chat-container">
+            <div id="chat-header">房间聊天</div>
+            <div id="chat-messages"></div>
+            <div id="chat-input-area">
+                <input type="text" id="chat-input" placeholder="输入聊天消息..." maxlength="200">
+                <button id="send-btn">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="match-waiting">
+        <div id="match-waiting-dialog">
+            <div class="spinner"></div>
+            <p>正在寻找对手...</p>
+            <button class="btn btn-danger" onclick="cancelMatch()">取消匹配</button>
+        </div>
+    </div>
+
+    <div id="game-over-overlay">
+        <div id="game-over-dialog">
+            <h2 id="game-over-title"></h2>
+            <p id="game-over-message"></p>
+            <button class="btn btn-primary" onclick="playAgain()">再来一局</button>
+            <button class="btn btn-secondary" onclick="returnToMenu()" style="margin-left:10px;">返回菜单</button>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        // ===== 用户信息 =====
+        var myUserId   = (typeof INJECTED_USERID !== 'undefined') ? INJECTED_USERID : sessionStorage.getItem('userId');
+        var myUsername = (typeof INJECTED_USERNAME !== 'undefined') ? INJECTED_USERNAME : (sessionStorage.getItem('username') || ('User' + myUserId));
+
+        if (!myUserId || myUserId === 'null') { window.location.href = '/entry'; return; }
+
+        // ===== 全局状态 =====
+        var ws = null, roomId = null, playerColor = null, myTurn = false, gameOver = false;
+        var lastMoveX = -1, lastMoveY = -1;
+
+        // ===== DOM 元素 =====
+        var el = {
+            board:         document.getElementById('board'),
+            roomInfo:      document.getElementById('room-info'),
+            turnInd:       document.getElementById('turn-indicator'),
+            playerColor:   document.getElementById('player-color'),
+            chatMessages:  document.getElementById('chat-messages'),
+            chatInput:     document.getElementById('chat-input'),
+            sendBtn:       document.getElementById('send-btn'),
+            matchWaiting:  document.getElementById('match-waiting'),
+            gameOverlay:   document.getElementById('game-over-overlay'),
+            gameOverTitle: document.getElementById('game-over-title'),
+            gameOverMsg:   document.getElementById('game-over-message')
+        };
+
+        // ===== 棋盘 =====
+        function initBoard() {
+            if (!el.board) return;
+            el.board.innerHTML = '';
+            for (var x = 0; x < 15; x++) {
+                for (var y = 0; y < 15; y++) {
+                    var cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+                    cell.addEventListener('click', (function(cx, cy, c) { return function() { onCellClick(cx, cy, c); }; })(x, y, cell));
+                    el.board.appendChild(cell);
+                }
+            }
+        }
+
+        function onCellClick(x, y, cell) {
+            if (!myTurn || gameOver) return;
+            if (cell.classList.contains('black-stone') || cell.classList.contains('white-stone')) return;
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            ws.send(JSON.stringify({ type: 'move', roomId: roomId, x: x, y: y }));
+        }
+
+        // ===== WebSocket =====
+        function connectWs() {
+            var proto = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
+            var url = proto + '//' + window.location.host + '/ws';
+            console.log('[pvp] connecting WebSocket:', url);
+            ws = new WebSocket(url);
+
+            ws.onopen = function() {
+                console.log('[pvp] WebSocket connected, sending match_request');
+                ws.send(JSON.stringify({ type: 'match_request' }));
+            };
+
+            ws.onmessage = function(e) {
+                try {
+                    var m = JSON.parse(e.data);
+                    console.log('[pvp] WS received:', m.type);
+                    handleMessage(m);
+                } catch(ex) {
+                    console.error('[pvp] WS parse error:', ex);
+                }
+            };
+
+            ws.onclose = function() {
+                console.log('[pvp] WebSocket closed. gameOver=' + gameOver);
+                if (!gameOver) {
+                    alert('与服务器的连接已断开');
+                    window.location.href = '/menu';
+                }
+            };
+
+            ws.onerror = function() {
+                console.error('[pvp] WebSocket error');
+            };
+        }
+
+        // ===== 消息处理 =====
+        function handleMessage(m) {
+            switch (m.type) {
+                case 'match_waiting':
+                    console.log('[pvp] match_waiting:', m.message);
+                    break;
+                case 'match_found':
+                    hideMatchWaiting();
+                    roomId = m.roomId;
+                    playerColor = m.color;
+                    myTurn = m.yourTurn;
+                    if (el.roomInfo) el.roomInfo.textContent = '房间 #' + roomId + ' | 对手: ' + m.opponent;
+                    if (el.playerColor) el.playerColor.textContent = '我执' + (playerColor === 'black' ? '黑棋' : '白棋');
+                    updateTurnInd();
+                    addChat('system', '匹配成功！对战开始');
+                    break;
+                case 'move_result':
+                    lastMoveX = m.x; lastMoveY = m.y;
+                    if (m.gameOver) {
+                        gameOver = true; myTurn = false;
+                        updateTurnInd();
+                        showGameOver(m);
+                    } else {
+                        myTurn = (String(m.nextTurn) === String(myUserId));
+                        updateTurnInd();
+                    }
+                    addChat('system', (m.color === 'black' ? '黑棋' : '白棋') + '落子 (' + m.x + ', ' + m.y + ')');
+                    break;
+                case 'game_over':
+                case 'opponent_left':
+                    gameOver = true; myTurn = false;
+                    updateTurnInd();
+                    if (m.type === 'opponent_left') addChat('system', '对手已断开连接');
+                    showGameOver(m);
+                    break;
+                case 'room_message':
+                    addChat('user', m.message, m.username);
+                    break;
+                case 'system_message':
+                    addChat('system', m.message);
+                    break;
+                case 'error':
+                    addChat('system', '错误: ' + m.message);
+                    break;
+            }
+        }
+
+        // ===== UI =====
+        function updateTurnInd() {
+            if (!el.turnInd) return;
+            el.turnInd.classList.remove('your-turn', 'opponent-turn');
+            if (gameOver) { el.turnInd.textContent = '游戏结束'; el.turnInd.classList.add('opponent-turn'); }
+            else if (myTurn) { el.turnInd.textContent = '轮到你了'; el.turnInd.classList.add('your-turn'); }
+            else { el.turnInd.textContent = '等待对手'; el.turnInd.classList.add('opponent-turn'); }
+        }
+
+        function showMatchWaiting() { if (el.matchWaiting) el.matchWaiting.style.display = 'flex'; }
+        function hideMatchWaiting() { if (el.matchWaiting) el.matchWaiting.style.display = 'none'; }
+
+        function showGameOver(m) {
+            if (!el.gameOverlay || !el.gameOverTitle || !el.gameOverMsg) return;
+            el.gameOverlay.style.display = 'flex';
+            if (m.result === 'win') { el.gameOverTitle.textContent = '你赢了！'; el.gameOverTitle.style.color = '#00ff88'; }
+            else if (m.result === 'lose') { el.gameOverTitle.textContent = '你输了'; el.gameOverTitle.style.color = '#ff4444'; }
+            else if (m.result === 'draw') { el.gameOverTitle.textContent = '平局'; el.gameOverTitle.style.color = '#ffaa00'; }
+            else if (m.type === 'opponent_left' || m.reason === 'opponent_left') { el.gameOverTitle.textContent = '对手离开，你获胜！'; el.gameOverTitle.style.color = '#00ff88'; }
+            else { el.gameOverTitle.textContent = '游戏结束'; el.gameOverTitle.style.color = '#00c3ff'; }
+            el.gameOverMsg.textContent = m.message || '';
+        }
+
+        // ===== 聊天 =====
+        function sendChat() {
+            if (!el.chatInput) return;
+            var text = el.chatInput.value.trim();
+            if (!text) return;
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            el.chatInput.value = '';
+            ws.send(JSON.stringify({ type: 'chat_room', roomId: roomId, username: myUsername, message: text }));
+        }
+
+        function addChat(type, text, sender) {
+            if (!el.chatMessages) return;
+            var div = document.createElement('div');
+            div.className = 'chat-msg';
+            var d = new Date();
+            var ts = [d.getHours(), d.getMinutes(), d.getSeconds()].map(function(n){ return String(n).padStart(2,'0'); }).join(':');
+            var safe = escapeHtml(text);
+            if (type === 'system') {
+                div.innerHTML = '<span class="system-msg">[系统] ' + safe + '</span><span class="time">' + ts + '</span>';
+            } else {
+                div.innerHTML = '<span class="sender">' + escapeHtml(sender || '') + ':</span> ' + safe + '<span class="time">' + ts + '</span>';
+            }
+            el.chatMessages.appendChild(div);
+            el.chatMessages.scrollTop = el.chatMessages.scrollHeight;
+        }
+
+        function escapeHtml(s) {
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        // ===== 事件绑定 =====
+        if (el.sendBtn)    el.sendBtn.addEventListener('click', sendChat);
+        if (el.chatInput)  el.chatInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') sendChat(); });
+
+        // ===== 公开函数（用于onclick属性） =====
+        window.cancelMatch = function() {
+            if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'match_cancel' }));
+            window.location.href = '/menu';
+        };
+        window.returnToMenu = function() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'leave_game' }));
+                ws.send(JSON.stringify({ type: 'match_cancel' }));
+            }
+            window.location.href = '/menu';
+        };
+        window.playAgain = function() {
+            if (el.gameOverlay) el.gameOverlay.style.display = 'none';
+            gameOver = false; myTurn = false; lastMoveX = -1; lastMoveY = -1;
+            initBoard();
+            updateTurnInd();
+            if (el.chatMessages) el.chatMessages.innerHTML = '';
+            if (el.roomInfo) el.roomInfo.textContent = '房间: 等待匹配...';
+            if (el.playerColor) el.playerColor.textContent = '';
+            showMatchWaiting();
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'leave_game' }));
+                setTimeout(function() { ws.send(JSON.stringify({ type: 'match_request' })); }, 500);
+            }
+        };
+
+        window.addEventListener('beforeunload', function() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'leave_game' }));
+                ws.send(JSON.stringify({ type: 'match_cancel' }));
+            }
+        });
+
+        // ===== 启动 =====
+        initBoard();
+        connectWs();
+        showMatchWaiting();
+    })();
+    </script>
+</body>
+</html>
