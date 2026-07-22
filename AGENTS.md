@@ -37,3 +37,17 @@ Existing histories use short, scoped Chinese summaries, for example `实现 webs
 ## Security & Configuration
 
 Do not commit database passwords, TLS keys, generated binaries, `build/`, `bin/`, or `lib/` artifacts. Replace hard-coded local paths and credentials with documented configuration before sharing the integrated project.
+
+## Agent skills
+
+### Issue tracker
+
+工作事项使用 GitHub Issues；外部 PR 不作为分流来源。See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+使用默认的五个分流标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+单上下文布局；Raft 五子棋集成任务还应参考 `docs/superpowers/`。See `docs/agents/domain.md`.
