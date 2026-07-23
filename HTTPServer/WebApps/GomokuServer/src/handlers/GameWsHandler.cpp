@@ -130,29 +130,34 @@ void GameWsHandler::onClose(const TcpConnectionPtr& conn)
             {
                 int opponentId = room->getOpponent(userId);
 
-                // 通知对手
                 auto oppConn = getConnectionByUserId(opponentId);
-                if (oppConn && oppConn->connected())
-                {
-                    json notify;
-                    notify["type"] = "opponent_left";
-                    notify["message"] = "对手已断开连接";
-                    auto& wsServer = server_->getHttpServer().getWsServer();
-                    wsServer.sendMessage(oppConn, notify.dump());
-                }
-
                 // 标记对手获胜
-                room->forfeit(opponentId);
-
-                // 将对手移回大厅
-                if (opponentId > 0)
+                if (server_->finishGameRoom(roomId, opponentId).status != PvpGameStatus::kOk)
                 {
-                    server_->getChatManager().addToLobby(opponentId, oppConn);
+                    LOG_WARN << "Failed to finish room after disconnect: " << roomId;
+                }
+                else
+                {
+                    // 通知对手
+                    if (oppConn && oppConn->connected())
+                    {
+                        json notify;
+                        notify["type"] = "opponent_left";
+                        notify["message"] = "对手已断开连接";
+                        auto& wsServer = server_->getHttpServer().getWsServer();
+                        wsServer.sendMessage(oppConn, notify.dump());
+                    }
+
+                    // 将对手移回大厅
+                    if (opponentId > 0)
+                    {
+                        server_->getChatManager().addToLobby(opponentId, oppConn);
+                    }
+
+                    // 清理房间
+                    server_->removeGameRoom(roomId);
                 }
             }
-
-            // 清理房间
-            server_->removeGameRoom(roomId);
         }
 
         LOG_INFO << "User " << userId << " disconnected from WebSocket";
@@ -178,6 +183,14 @@ void GameWsHandler::handleMatchRequest(const TcpConnectionPtr& conn, int userId,
         // 创建对局房间
         auto& wsServer = server_->getHttpServer().getWsServer();
         int roomId = server_->createGameRoom(userId, opponent);
+        if (roomId <= 0)
+        {
+            json unavailable;
+            unavailable["type"] = "raft_unavailable";
+            unavailable["roomId"] = 0;
+            wsServer.sendMessage(conn, unavailable.dump());
+            return;
+        }
 
         // 从大厅移除双方
         server_->getChatManager().removeFromLobby(userId);
@@ -273,10 +286,18 @@ void GameWsHandler::handleMove(const TcpConnectionPtr& conn, int userId,
     int x = msg.value("x", -1);
     int y = msg.value("y", -1);
 
-    int moveResult = room->makeMove(userId, x, y);
+    const auto moveResult = server_->moveGameRoom(roomId, userId, x, y);
     auto& wsServer = server_->getHttpServer().getWsServer();
 
-    if (moveResult == -1)
+    if (moveResult.status == PvpGameStatus::kUnavailable)
+    {
+        json unavailable;
+        unavailable["type"] = "raft_unavailable";
+        unavailable["roomId"] = roomId;
+        wsServer.sendMessage(conn, unavailable.dump());
+        return;
+    }
+    if (moveResult.status == PvpGameStatus::kInvalidMove)
     {
         // 非法移动
         json error;
@@ -285,7 +306,7 @@ void GameWsHandler::handleMove(const TcpConnectionPtr& conn, int userId,
         wsServer.sendMessage(conn, error.dump());
         return;
     }
-    else if (moveResult == -3)
+    else if (moveResult.status == PvpGameStatus::kNotYourTurn)
     {
         // 不是你的回合
         json error;
@@ -294,6 +315,18 @@ void GameWsHandler::handleMove(const TcpConnectionPtr& conn, int userId,
         wsServer.sendMessage(conn, error.dump());
         return;
     }
+
+    else if (moveResult.status != PvpGameStatus::kOk)
+    {
+        json error;
+        error["type"] = "error";
+        error["message"] = "game is over";
+        wsServer.sendMessage(conn, error.dump());
+        return;
+    }
+
+    room = server_->getGameRoom(roomId);
+    if (!room) return;
 
     // 落子成功，通知双方
     std::string color = room->getPlayerColor(userId);
@@ -402,7 +435,11 @@ void GameWsHandler::handleLeaveGame(int userId)
     int opponentId = room->getOpponent(userId);
 
     // 对手获胜
-    room->forfeit(opponentId);
+    if (server_->finishGameRoom(roomId, opponentId).status != PvpGameStatus::kOk)
+    {
+        LOG_WARN << "Failed to finish room after leave: " << roomId;
+        return;
+    }
 
     auto& wsServer = server_->getHttpServer().getWsServer();
 

@@ -9,7 +9,9 @@
 
 #include "AiGame.h"
 #include "GameRoom.h"
+#include "GameStateStore.h"
 #include "MatchmakingPool.h"
+#include "PvpGameService.h"
 #include "ChatManager.h"
 #include "../../../HttpServer/include/http/HttpServer.h"
 #include "../../../HttpServer/include/utils/MysqlUtil.h"
@@ -134,6 +136,9 @@ private:
      */
     std::shared_ptr<GameRoom> getGameRoom(int roomId);
 
+    PvpGameResult moveGameRoom(int roomId, int playerId, int x, int y);
+    PvpGameResult finishGameRoom(int roomId, int winnerId);
+
     /**
      * @brief 通过用户 ID 查找其所在的房间号
      * @return 房间号，0 表示不在任何房间
@@ -179,10 +184,11 @@ private:
     MatchmakingPool                                  matchmakingPool_;
     // 聊天管理器（大厅聊天 + 房间聊天）
     ChatManager                                      chatManager_;
+    std::unique_ptr<MemoryGameStateStore>            gameStateStore_;
+    std::unique_ptr<PvpGameService>                  pvpGameService_;
     // roomId -> GameRoom PVP 对局房间
     std::unordered_map<int, std::shared_ptr<GameRoom>> gameRooms_;
     mutable std::mutex                               mutexForGameRooms_;
-    std::atomic<int>                                 nextRoomId_{1}; // 自增房间 ID
     // WebSocket 消息处理器
     std::shared_ptr<GameWsHandler>                   wsHandler_;
 };

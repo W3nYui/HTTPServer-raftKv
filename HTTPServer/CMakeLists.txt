@@ -85,6 +85,16 @@ target_include_directories(game_room_test PRIVATE WebApps/GomokuServer/include)
 
 add_test(NAME game_room_test COMMAND game_room_test)
 
+add_executable(pvp_game_service_test
+    WebApps/GomokuServer/test/test_pvp_game_service.cpp
+    WebApps/GomokuServer/src/GameRoom.cpp
+    WebApps/GomokuServer/src/PvpGameService.cpp
+)
+
+target_include_directories(pvp_game_service_test PRIVATE WebApps/GomokuServer/include)
+
+add_test(NAME pvp_game_service_test COMMAND pvp_game_service_test)
+
 # 打印调试信息
 message(STATUS "Include directories:")
 get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)

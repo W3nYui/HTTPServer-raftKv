@@ -25,6 +25,8 @@ GomokuServer::GomokuServer(int port,
                            muduo::net::TcpServer::Option option)
     : httpServer_(port, name, useSSL, option), maxOnline_(0) // 这里httpServer_是muduo的HttpServer实例，用于处理HTTP请求 但是传参不匹配
 {
+    gameStateStore_ = std::make_unique<MemoryGameStateStore>();
+    pvpGameService_ = std::make_unique<PvpGameService>(*gameStateStore_);
     initialize(); // 初始化会话管理、中间件管理、路由
     if (useSSL)
     {
@@ -194,8 +196,11 @@ void GomokuServer::initializeRouter()
 // ========== PVP 房间管理 ==========
 int GomokuServer::createGameRoom(int player1, int player2)
 {
-    int roomId = nextRoomId_++;
-    auto room = std::make_shared<GameRoom>(roomId, player1, player2);
+    const auto created = pvpGameService_->createRoom(player1, player2);
+    if (created.status != PvpGameStatus::kOk) return 0;
+
+    auto room = GameRoom::fromSnapshot(created.snapshot);
+    const int roomId = room->roomId();
 
     std::lock_guard<std::mutex> lock(mutexForGameRooms_);
     gameRooms_[roomId] = room;
@@ -207,9 +212,41 @@ int GomokuServer::createGameRoom(int player1, int player2)
 
 std::shared_ptr<GameRoom> GomokuServer::getGameRoom(int roomId)
 {
+    {
+        std::lock_guard<std::mutex> lock(mutexForGameRooms_);
+        auto it = gameRooms_.find(roomId);
+        if (it != gameRooms_.end()) return it->second;
+    }
+
+    const auto loaded = pvpGameService_->load(roomId);
+    if (loaded.status != PvpGameStatus::kOk) return nullptr;
+
+    auto room = GameRoom::fromSnapshot(loaded.snapshot);
     std::lock_guard<std::mutex> lock(mutexForGameRooms_);
-    auto it = gameRooms_.find(roomId);
-    return (it != gameRooms_.end()) ? it->second : nullptr;
+    gameRooms_[roomId] = room;
+    return room;
+}
+
+PvpGameResult GomokuServer::moveGameRoom(int roomId, int playerId, int x, int y)
+{
+    const auto result = pvpGameService_->move(roomId, playerId, x, y);
+    if (result.status != PvpGameStatus::kOk) return result;
+
+    auto room = GameRoom::fromSnapshot(result.snapshot);
+    std::lock_guard<std::mutex> lock(mutexForGameRooms_);
+    gameRooms_[roomId] = room;
+    return result;
+}
+
+PvpGameResult GomokuServer::finishGameRoom(int roomId, int winnerId)
+{
+    const auto result = pvpGameService_->finish(roomId, winnerId);
+    if (result.status != PvpGameStatus::kOk) return result;
+
+    auto room = GameRoom::fromSnapshot(result.snapshot);
+    std::lock_guard<std::mutex> lock(mutexForGameRooms_);
+    gameRooms_[roomId] = room;
+    return result;
 }
 
 int GomokuServer::getRoomByUserId(int userId) const
