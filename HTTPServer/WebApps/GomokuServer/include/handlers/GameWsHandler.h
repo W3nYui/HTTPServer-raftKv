@@ -49,6 +49,7 @@ private:
     void handleMatchRequest(const TcpConnectionPtr& conn, int userId, const nlohmann::json& msg);
     void handleMatchCancel(int userId);
     void handleMove(const TcpConnectionPtr& conn, int userId, const nlohmann::json& msg);
+    void handleStateRequest(const TcpConnectionPtr& conn, int userId);
     void handleChatLobby(int userId, const nlohmann::json& msg);
     void handleChatRoom(const TcpConnectionPtr& conn, int userId, const nlohmann::json& msg);
     void handleLeaveGame(int userId);

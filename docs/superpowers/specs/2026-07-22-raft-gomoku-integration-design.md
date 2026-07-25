@@ -36,13 +36,13 @@ One application process is the single writer. Its room mutex spans this read-val
 
 ## Persistence Model
 
-All values are JSON strings stored by the existing Raft KV API.
+The existing Raft KV API has only single-key Put, so all logical records are stored as members of one JSON state envelope at physical key `gomoku:state`. The envelope is replaced by one Raft Put, making room snapshots, the active-room index, and the next room ID visible together after a quorum commit.
 
 | Key | Value | Purpose |
 | --- | --- | --- |
-| `gomoku:room:<roomId>` | complete room snapshot | restores or displays one PVP game |
-| `gomoku:active-room-ids` | JSON array of active room IDs | identifies recoverable games because the KV API cannot scan keys |
-| `gomoku:next-room-id` | decimal integer | allocates unique room IDs across application restarts |
+| `gomoku:room:<roomId>` | complete room snapshot | logical envelope member that restores or displays one PVP game |
+| `gomoku:active-room-ids` | JSON array of active room IDs | logical envelope member that identifies recoverable games because the KV API cannot scan keys |
+| `gomoku:next-room-id` | decimal integer | logical envelope member that allocates unique room IDs across application restarts |
 
 A room snapshot contains `roomId`, both player IDs, board cells, current turn, move count, terminal state, winner, terminal reason, and last move. It is replaced on every accepted move. When a game finishes, the room ID is removed from the active index but its room key remains as the final demonstration result.
 

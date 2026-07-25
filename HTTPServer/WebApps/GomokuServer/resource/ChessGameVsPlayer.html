@@ -110,7 +110,7 @@
         if (!myUserId || myUserId === 'null') { window.location.href = '/entry'; return; }
 
         // ===== 全局状态 =====
-        var ws = null, roomId = null, playerColor = null, myTurn = false, gameOver = false;
+        var ws = null, roomId = null, playerColor = null, myTurn = false, gameOver = false, syncPending = false;
         var lastMoveX = -1, lastMoveY = -1;
 
         // ===== DOM 元素 =====
@@ -148,7 +148,36 @@
             if (!myTurn || gameOver) return;
             if (cell.classList.contains('black-stone') || cell.classList.contains('white-stone')) return;
             if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            myTurn = false;
+            updateTurnInd();
             ws.send(JSON.stringify({ type: 'move', roomId: roomId, x: x, y: y }));
+        }
+
+        function applySnapshot(snapshot) {
+            if (!snapshot || !Array.isArray(snapshot.board) || !el.board) return;
+            roomId = snapshot.roomId;
+            gameOver = snapshot.gameOver === true;
+            myTurn = !gameOver && String(snapshot.currentTurn) === String(myUserId);
+            lastMoveX = snapshot.lastMove ? snapshot.lastMove.x : -1;
+            lastMoveY = snapshot.lastMove ? snapshot.lastMove.y : -1;
+            var cells = el.board.querySelectorAll('.cell');
+            for (var i = 0; i < cells.length; i++) {
+                var cell = cells[i];
+                var x = Number(cell.dataset.x);
+                var y = Number(cell.dataset.y);
+                cell.classList.remove('black-stone', 'white-stone', 'last-move');
+                if (snapshot.board[x][y] === 'black') cell.classList.add('black-stone');
+                if (snapshot.board[x][y] === 'white') cell.classList.add('white-stone');
+                if (x === lastMoveX && y === lastMoveY) cell.classList.add('last-move');
+            }
+            syncPending = false;
+            updateTurnInd();
+        }
+
+        function requestCommittedState() {
+            if (syncPending || !ws || ws.readyState !== WebSocket.OPEN) return;
+            syncPending = true;
+            ws.send(JSON.stringify({ type: 'state_request', roomId: roomId }));
         }
 
         // ===== WebSocket =====
@@ -197,13 +226,15 @@
                     roomId = m.roomId;
                     playerColor = m.color;
                     myTurn = m.yourTurn;
+                    syncPending = false;
                     if (el.roomInfo) el.roomInfo.textContent = '房间 #' + roomId + ' | 对手: ' + m.opponent;
                     if (el.playerColor) el.playerColor.textContent = '我执' + (playerColor === 'black' ? '黑棋' : '白棋');
                     updateTurnInd();
                     addChat('system', '匹配成功！对战开始');
                     break;
                 case 'move_result':
-                    lastMoveX = m.x; lastMoveY = m.y;
+                    if (m.state) applySnapshot(m.state);
+                    else { lastMoveX = m.x; lastMoveY = m.y; }
                     if (m.gameOver) {
                         gameOver = true; myTurn = false;
                         updateTurnInd();
@@ -213,6 +244,16 @@
                         updateTurnInd();
                     }
                     addChat('system', (m.color === 'black' ? '黑棋' : '白棋') + '落子 (' + m.x + ', ' + m.y + ')');
+                    break;
+                case 'state_result':
+                    applySnapshot(m.state);
+                    addChat('system', '已同步最新已提交对局状态');
+                    break;
+                case 'raft_unavailable':
+                    myTurn = false;
+                    updateTurnInd();
+                    addChat('system', 'Raft 暂时不可用，正在请求最新已提交状态');
+                    requestCommittedState();
                     break;
                 case 'game_over':
                 case 'opponent_left':

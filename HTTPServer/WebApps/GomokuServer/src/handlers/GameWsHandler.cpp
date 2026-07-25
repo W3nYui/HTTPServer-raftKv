@@ -86,6 +86,10 @@ void GameWsHandler::onMessage(const TcpConnectionPtr& conn, const std::string& m
         {
             handleMove(conn, userId, msg);
         }
+        else if (type == "state_request")
+        {
+            handleStateRequest(conn, userId);
+        }
         else if (type == "chat_lobby")
         {
             handleChatLobby(userId, msg);
@@ -257,6 +261,45 @@ void GameWsHandler::handleMatchCancel(int userId)
     }
 }
 
+// ========== 已提交状态刷新 ==========
+void GameWsHandler::handleStateRequest(const TcpConnectionPtr& conn, int userId)
+{
+    const int roomId = server_->getRoomByUserId(userId);
+    auto& wsServer = server_->getHttpServer().getWsServer();
+    if (roomId <= 0)
+    {
+        json error;
+        error["type"] = "error";
+        error["message"] = "你不在任何对局中";
+        wsServer.sendMessage(conn, error.dump());
+        return;
+    }
+
+    const auto result = server_->loadGameRoom(roomId);
+    if (result.status == PvpGameStatus::kUnavailable)
+    {
+        json unavailable;
+        unavailable["type"] = "raft_unavailable";
+        unavailable["roomId"] = roomId;
+        wsServer.sendMessage(conn, unavailable.dump());
+        return;
+    }
+    if (result.status != PvpGameStatus::kOk)
+    {
+        json error;
+        error["type"] = "error";
+        error["message"] = "房间不存在";
+        wsServer.sendMessage(conn, error.dump());
+        return;
+    }
+
+    json state;
+    state["type"] = "state_result";
+    state["roomId"] = roomId;
+    state["state"] = result.snapshot;
+    wsServer.sendMessage(conn, state.dump());
+}
+
 // ========== 落子 ==========
 void GameWsHandler::handleMove(const TcpConnectionPtr& conn, int userId,
                                 const nlohmann::json& msg)
@@ -339,6 +382,7 @@ void GameWsHandler::handleMove(const TcpConnectionPtr& conn, int userId,
     moveResultData["y"] = y;
     moveResultData["color"] = color;
     moveResultData["userId"] = userId;
+    moveResultData["state"] = moveResult.snapshot;
 
     // 检查游戏是否结束
     if (room->isGameOver())

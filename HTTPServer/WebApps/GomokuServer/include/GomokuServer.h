@@ -40,6 +40,7 @@ public:
     GomokuServer(int port,
                  const std::string& name,
                  bool useSSL,
+                 std::unique_ptr<GameStateStore> gameStateStore,
                  muduo::net::TcpServer::Option option = muduo::net::TcpServer::kNoReusePort); // 默认不复用端口
 
     void setThreadNum(int numThreads);
@@ -49,6 +50,7 @@ private:
     void initializeSession();
     void initializeRouter();
     void initializeMiddleware();
+    void recoverActiveGameRooms();
     
     void setSessionManager(std::unique_ptr<http::session::SessionManager> manager)
     {
@@ -138,6 +140,7 @@ private:
 
     PvpGameResult moveGameRoom(int roomId, int playerId, int x, int y);
     PvpGameResult finishGameRoom(int roomId, int winnerId);
+    PvpGameResult loadGameRoom(int roomId);
 
     /**
      * @brief 通过用户 ID 查找其所在的房间号
@@ -184,7 +187,7 @@ private:
     MatchmakingPool                                  matchmakingPool_;
     // 聊天管理器（大厅聊天 + 房间聊天）
     ChatManager                                      chatManager_;
-    std::unique_ptr<MemoryGameStateStore>            gameStateStore_;
+    std::unique_ptr<GameStateStore>                  gameStateStore_;
     std::unique_ptr<PvpGameService>                  pvpGameService_;
     // roomId -> GameRoom PVP 对局房间
     std::unordered_map<int, std::shared_ptr<GameRoom>> gameRooms_;
