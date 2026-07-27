@@ -159,6 +159,15 @@ target_include_directories(game_ws_handler_test PRIVATE WebApps/GomokuServer/inc
 
 add_test(NAME game_ws_handler_test COMMAND game_ws_handler_test)
 
+add_executable(database_config_test
+    WebApps/GomokuServer/test/test_database_config.cpp
+    WebApps/GomokuServer/src/DatabaseConfig.cpp
+)
+
+target_include_directories(database_config_test PRIVATE WebApps/GomokuServer/include)
+
+add_test(NAME database_config_test COMMAND database_config_test)
+
 find_program(NODE_EXECUTABLE node)
 if(NODE_EXECUTABLE)
     add_test(NAME pvp_frontend_smoke_test

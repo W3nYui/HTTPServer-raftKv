@@ -9,6 +9,7 @@
 #include "../include/handlers/GameWsHandler.h"
 #include "../include/GomokuServer.h"
 #include "../include/GameRoom.h"
+#include "../include/DatabaseConfig.h"
 #include "../../../HttpServer/include/http/HttpRequest.h"
 #include "../../../HttpServer/include/http/HttpResponse.h"
 #include "../../../HttpServer/include/http/HttpServer.h"
@@ -19,6 +20,7 @@
 
 
 using namespace http;
+
 // 应用层服务器 初始化 调度底层网络层
 GomokuServer::GomokuServer(int port,
                            const std::string &name,
@@ -80,7 +82,8 @@ void GomokuServer::initialize()
 {
     // 初始化数据库连接池
     // mysql是使用tcp协议进行连接的 因为指定了mysql的监听端口为3306 所以这里也指定了3306 同时设定连接池大小为10(只有10个线程会同时连接数据库)
-    http::MysqlUtil::init("tcp://127.0.0.1:3306", "root", "root", "Gomoku", 10);
+    const auto databaseConfig = databaseConfigFromEnvironment();
+    http::MysqlUtil::init(databaseConfig.host, databaseConfig.user, databaseConfig.password, databaseConfig.database, 10);
     // 初始化会话
     initializeSession(); // session 用来存储用户登录状态 因为http是无状态的 所以需要使用session来存储控制用户登录状态、游戏状态、访问权限等
     // 初始化中间件
@@ -433,4 +436,3 @@ void GomokuServer::packageResp(const std::string &version,
         resp->setCloseConnection(true);
     }
 }
-
