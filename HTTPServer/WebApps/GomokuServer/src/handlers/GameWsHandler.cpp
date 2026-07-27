@@ -1,4 +1,6 @@
 #include "../../include/handlers/GameWsHandler.h"
+#include "../../include/gameWsMessages.h"
+#include "../../include/gameWsMoveFlow.h"
 
 #include <muduo/base/Logging.h>
 
@@ -278,10 +280,7 @@ void GameWsHandler::handleStateRequest(const TcpConnectionPtr& conn, int userId)
     const auto result = server_->loadGameRoom(roomId);
     if (result.status == PvpGameStatus::kUnavailable)
     {
-        json unavailable;
-        unavailable["type"] = "raft_unavailable";
-        unavailable["roomId"] = roomId;
-        wsServer.sendMessage(conn, unavailable.dump());
+        wsServer.sendMessage(conn, GameWsMessages::raftUnavailable(roomId).message.dump());
         return;
     }
     if (result.status != PvpGameStatus::kOk)
@@ -293,11 +292,7 @@ void GameWsHandler::handleStateRequest(const TcpConnectionPtr& conn, int userId)
         return;
     }
 
-    json state;
-    state["type"] = "state_result";
-    state["roomId"] = roomId;
-    state["state"] = result.snapshot;
-    wsServer.sendMessage(conn, state.dump());
+    wsServer.sendMessage(conn, GameWsMessages::stateResult(result.snapshot).dump());
 }
 
 // ========== 落子 ==========
@@ -315,29 +310,17 @@ void GameWsHandler::handleMove(const TcpConnectionPtr& conn, int userId,
         return;
     }
 
-    auto room = server_->getGameRoom(roomId);
-    if (!room)
-    {
-        json error;
-        error["type"] = "error";
-        error["message"] = "房间不存在";
-        auto& wsServer = server_->getHttpServer().getWsServer();
-        wsServer.sendMessage(conn, error.dump());
-        return;
-    }
-
     int x = msg.value("x", -1);
     int y = msg.value("y", -1);
 
-    const auto moveResult = server_->moveGameRoom(roomId, userId, x, y);
     auto& wsServer = server_->getHttpServer().getWsServer();
+    const auto moveResult = GameWsMoveFlow::submit(
+        [&] { return server_->moveGameRoom(roomId, userId, x, y); },
+        roomId,
+        [&](const json& message) { wsServer.sendMessage(conn, message.dump()); });
 
     if (moveResult.status == PvpGameStatus::kUnavailable)
     {
-        json unavailable;
-        unavailable["type"] = "raft_unavailable";
-        unavailable["roomId"] = roomId;
-        wsServer.sendMessage(conn, unavailable.dump());
         return;
     }
     if (moveResult.status == PvpGameStatus::kInvalidMove)
@@ -368,27 +351,20 @@ void GameWsHandler::handleMove(const TcpConnectionPtr& conn, int userId,
         return;
     }
 
-    room = server_->getGameRoom(roomId);
-    if (!room) return;
-
-    // 落子成功，通知双方
-    std::string color = room->getPlayerColor(userId);
-    int opponentId = room->getOpponent(userId);
+    const auto& snapshot = moveResult.snapshot;
+    const int   player1 = snapshot.at("player1").get<int>();
+    const int   player2 = snapshot.at("player2").get<int>();
+    const std::string color = userId == player1 ? "black" : "white";
+    const int opponentId = userId == player1 ? player2 : player1;
     auto oppConn = getConnectionByUserId(opponentId);
 
-    json moveResultData;
-    moveResultData["type"] = "move_result";
-    moveResultData["x"] = x;
-    moveResultData["y"] = y;
-    moveResultData["color"] = color;
-    moveResultData["userId"] = userId;
-    moveResultData["state"] = moveResult.snapshot;
+    auto delivery = GameWsMessages::moveResult(roomId, userId, x, y, color, snapshot);
+    auto& moveResultData = delivery.message;
 
-    // 检查游戏是否结束
-    if (room->isGameOver())
+    // Only derive result fields from the snapshot returned by the committed write.
+    if (moveResult.snapshot.at("gameOver").get<bool>())
     {
-        int winner = room->getWinner();
-        std::string reason = room->getWinnerReason();
+        int winner = moveResult.snapshot.at("winner").get<int>();
 
         if (winner == -1)
         {
@@ -407,20 +383,23 @@ void GameWsHandler::handleMove(const TcpConnectionPtr& conn, int userId,
     else
     {
         moveResultData["gameOver"] = false;
-        moveResultData["nextTurn"] = room->currentTurn();
+        moveResultData["nextTurn"] = moveResult.snapshot.at("currentTurn");
     }
 
     std::string moveResultStr = moveResultData.dump();
 
     // 发送给双方
-    wsServer.sendMessage(conn, moveResultStr);
-    if (oppConn && oppConn->connected())
+    if (delivery.broadcast)
     {
-        wsServer.sendMessage(oppConn, moveResultStr);
+        wsServer.sendMessage(conn, moveResultStr);
+        if (oppConn && oppConn->connected())
+        {
+            wsServer.sendMessage(oppConn, moveResultStr);
+        }
     }
 
     // 游戏结束后的清理
-    if (room->isGameOver())
+    if (moveResult.snapshot.at("gameOver").get<bool>())
     {
         // 将双方移回大厅
         server_->getChatManager().addToLobby(userId, conn);

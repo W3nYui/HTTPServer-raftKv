@@ -49,29 +49,37 @@ void LogoutHandler::handle(const http::HttpRequest &req, http::HttpResponse *res
                 if (room)
                 {
                     int opponentId = room->getOpponent(userId);
-                    room->forfeit(opponentId);
-
-                    // 通过 WebSocket 通知对手
-                    auto wsHandler = server_->wsHandler_;
-                    if (wsHandler)
+                    const auto finished = server_->finishGameRoom(roomId, opponentId);
+                    if (finished.status != PvpGameStatus::kOk)
                     {
-                        auto oppConn = wsHandler->getConnectionByUserId(opponentId);
-                        if (oppConn && oppConn->connected())
+                        LOG_WARN << "Failed to finish room during logout: " << roomId;
+                    }
+                    else
+                    {
+                        // 通过 WebSocket 通知对手
+                        auto wsHandler = server_->wsHandler_;
+                        if (wsHandler)
                         {
-                            json gameOver;
-                            gameOver["type"] = "game_over";
-                            gameOver["winner"] = opponentId;
-                            gameOver["reason"] = "opponent_left";
-                            gameOver["message"] = "对手已退出游戏，你获胜了！";
-                            auto& wsServer = server_->getHttpServer().getWsServer();
-                            wsServer.sendMessage(oppConn, gameOver.dump());
+                            auto oppConn = wsHandler->getConnectionByUserId(opponentId);
+                            if (oppConn && oppConn->connected())
+                            {
+                                json gameOver;
+                                gameOver["type"] = "game_over";
+                                gameOver["winner"] = opponentId;
+                                gameOver["reason"] = "opponent_left";
+                                gameOver["message"] = "对手已退出游戏，你获胜了！";
+                                auto& wsServer = server_->getHttpServer().getWsServer();
+                                wsServer.sendMessage(oppConn, gameOver.dump());
 
-                            // 将对手移回大厅
-                            server_->getChatManager().addToLobby(opponentId, oppConn);
+                                // 将对手移回大厅
+                                server_->getChatManager().addToLobby(opponentId, oppConn);
+                            }
                         }
+
+                        // Remove the local cache only after the terminal snapshot is committed.
+                        server_->removeGameRoom(roomId);
                     }
                 }
-                server_->removeGameRoom(roomId);
             }
 
             // 从匹配池移除

@@ -147,6 +147,18 @@ target_include_directories(raft_game_state_store_test PRIVATE WebApps/GomokuServ
 
 add_test(NAME raft_game_state_store_test COMMAND raft_game_state_store_test)
 
+add_executable(game_ws_handler_test
+    WebApps/GomokuServer/test/test_game_ws_handler.cpp
+    WebApps/GomokuServer/src/gameWsMessages.cpp
+    WebApps/GomokuServer/src/gameWsMoveFlow.cpp
+    WebApps/GomokuServer/src/GameRoom.cpp
+    WebApps/GomokuServer/src/PvpGameService.cpp
+)
+
+target_include_directories(game_ws_handler_test PRIVATE WebApps/GomokuServer/include)
+
+add_test(NAME game_ws_handler_test COMMAND game_ws_handler_test)
+
 find_program(NODE_EXECUTABLE node)
 if(NODE_EXECUTABLE)
     add_test(NAME pvp_frontend_smoke_test
