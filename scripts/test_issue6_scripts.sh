@@ -5,7 +5,7 @@ set -euo pipefail
 readonly ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-for script in build.sh generate-dev-cert.sh start-demo.sh stop-demo.sh verify-monorepo.sh; do
+for script in build.sh generate-dev-cert.sh init-local-mariadb.sh start-demo.sh stop-demo.sh verify-monorepo.sh; do
   test -x "scripts/$script"
   bash -n "scripts/$script"
 done
@@ -42,6 +42,13 @@ trap 'rm -rf "$TEST_RUNTIME_DIR"' EXIT
 CERT_DIR="$TEST_RUNTIME_DIR/certs" ./scripts/generate-dev-cert.sh
 openssl verify -CAfile "$TEST_RUNTIME_DIR/certs/local-ca.crt" "$TEST_RUNTIME_DIR/certs/server.crt"
 openssl x509 -in "$TEST_RUNTIME_DIR/certs/server.crt" -noout -text | grep -q 'DNS:localhost, IP Address:127.0.0.1'
+
+printf '%s\n' \
+  'GOMOKU_DB_HOST=tcp://127.0.0.1:3306' \
+  'GOMOKU_DB_USER=gomoku' \
+  'GOMOKU_DB_PASSWORD=test-password' \
+  'GOMOKU_DB_NAME=Gomoku' >"$TEST_RUNTIME_DIR/gomoku-db.env"
+chmod 600 "$TEST_RUNTIME_DIR/gomoku-db.env"
 
 RAFT_RUNNER="$ROOT_DIR/scripts/test-fixtures/fake-raft-runner.sh" \
 HTTP_SERVER="$ROOT_DIR/scripts/test-fixtures/fake-http-server.sh" \

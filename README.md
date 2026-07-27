@@ -16,24 +16,76 @@
 
 - CMake 3.22+、支持 C++20 的编译器
 - Protobuf、Muduo、Boost serialization、OpenSSL、pthread、dl
-- MySQL 和带有传统 `cppconn` 头文件的 MySQL Connector/C++
+- MariaDB LTS（本地数据库服务）和带有传统 `cppconn` 头文件的 MySQL Connector/C++ 1.1
 - Node.js（前端烟雾测试）
 - OpenSSL 命令行工具（生成本地开发证书）
 
-## 初始化数据库
+## 本地数据库环境
+
+应用代码使用 MySQL Connector/C++ 1.1 的传统 `cppconn` API；它与 MariaDB 服务端是
+两个独立的依赖。数据库服务端可使用 MariaDB LTS，但仍必须安装或构建 Connector/C++ 1.1，
+以提供 `cppconn/connection.h`、`mysql_driver.h` 与 `libmysqlcppconn`。
+
+不要复用旧教程中的 Ubuntu 18.04 MySQL 5.7 `.deb` 包，也不要配置 `root/root` 或开放远程
+`3306`。本项目的初始化脚本创建随机密码的 `gomoku` 专用账号，仅允许来自 `localhost` 与
+`127.0.0.1` 的连接。
+
+### CachyOS / Arch Linux
+
+```bash
+sudo pacman -S --needed mariadb-lts base-devel cmake curl
+sudo mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql
+sudo systemctl enable --now mariadb.service
+```
+
+### Ubuntu WSL 22.04
+
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake curl mariadb-server libmariadb-dev libmariadb-dev-compat
+sudo systemctl enable --now mariadb
+```
+
+如果 WSL 未启用 systemd，改用 `sudo service mariadb start`。两种环境都必须先确认服务可用：
+
+```bash
+sudo mariadb --protocol=socket -e 'SELECT VERSION();'
+```
+
+### 构建传统 Connector/C++ 1.1
+
+将 Connector/C++ 安装到项目的 gitignored 前缀，使 CachyOS 和 Ubuntu 使用完全相同的
+头文件与库版本：
+
+```bash
+CONNECTOR_VERSION=1.1.13
+CONNECTOR_PREFIX="$PWD/runtime/deps/mysql-connector-cpp"
+mkdir -p runtime/deps
+curl -L -o "/tmp/mysql-connector-cpp-$CONNECTOR_VERSION.tar.gz" \
+  "https://cdn.mysql.com/Downloads/Connector-C++/mysql-connector-c++-$CONNECTOR_VERSION.tar.gz"
+tar -xf "/tmp/mysql-connector-cpp-$CONNECTOR_VERSION.tar.gz" -C /tmp
+cmake -S "/tmp/mysql-connector-cpp-$CONNECTOR_VERSION" \
+  -B "/tmp/mysql-connector-cpp-$CONNECTOR_VERSION-build" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$CONNECTOR_PREFIX"
+cmake --build "/tmp/mysql-connector-cpp-$CONNECTOR_VERSION-build" -j2
+cmake --install "/tmp/mysql-connector-cpp-$CONNECTOR_VERSION-build"
+```
+
+`scripts/build.sh` 默认从该前缀发现依赖；若安装到其他位置，设置
+`MYSQL_CONNECTOR_CPP_ROOT=/path/to/prefix` 后再执行构建脚本。
+
+### 初始化数据库
 
 在仓库根目录执行：
 
 ```bash
-mysql -u <管理员用户> -p < scripts/init-db.sql
-export GOMOKU_DB_HOST=tcp://127.0.0.1:3306
-export GOMOKU_DB_USER=<gomoku-user>
-export GOMOKU_DB_PASSWORD=<gomoku-password>
-export GOMOKU_DB_NAME=Gomoku
+./scripts/init-local-mariadb.sh
 ```
 
-先创建数据库用户并授予它对 `Gomoku` 的权限。应用不提供默认账号、密码或数据库地址；缺少任一
-`GOMOKU_DB_*` 变量时会明确报错并退出。
+脚本在 `runtime/gomoku-db.env` 创建密码和应用配置，文件权限为 `600` 且整个 `runtime/`
+目录被 Git 忽略。`scripts/start-demo.sh` 会自动加载它；不要提交、复制或在终端输出该文件内容。
+需要重建数据时，可在 MariaDB 中删除 `Gomoku` 数据库与两个 `gomoku` 用户后重新运行脚本。
 
 ## 构建与启动
 

@@ -12,6 +12,53 @@ find_package(OpenSSL REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Boost REQUIRED COMPONENTS serialization)
 
+set(MYSQL_CONNECTOR_CPP_ROOT "" CACHE PATH
+    "Prefix containing legacy MySQL Connector/C++ headers and libraries")
+
+set(MYSQL_CONNECTOR_CPP_HINTS)
+if(MYSQL_CONNECTOR_CPP_ROOT)
+    list(APPEND MYSQL_CONNECTOR_CPP_HINTS
+        "${MYSQL_CONNECTOR_CPP_ROOT}/include"
+        "${MYSQL_CONNECTOR_CPP_ROOT}/lib"
+        "${MYSQL_CONNECTOR_CPP_ROOT}/lib64"
+    )
+endif()
+
+find_path(MYSQLCPPCONN_INCLUDE_DIR
+    NAMES cppconn/connection.h
+    HINTS ${MYSQL_CONNECTOR_CPP_HINTS}
+    PATH_SUFFIXES include
+)
+find_path(MYSQLCPPCONN_DRIVER_INCLUDE_DIR
+    NAMES mysql_driver.h
+    HINTS ${MYSQL_CONNECTOR_CPP_HINTS}
+    PATH_SUFFIXES include
+)
+find_library(MYSQLCPPCONN_LIBRARY
+    NAMES mysqlcppconn
+    HINTS ${MYSQL_CONNECTOR_CPP_HINTS}
+    PATH_SUFFIXES lib lib64
+)
+find_path(MYSQL_CLIENT_INCLUDE_DIR
+    NAMES mysql/mysql.h
+)
+find_library(MYSQL_CLIENT_LIBRARY
+    NAMES mariadb mysqlclient
+)
+
+if(NOT MYSQLCPPCONN_INCLUDE_DIR OR NOT MYSQLCPPCONN_DRIVER_INCLUDE_DIR OR NOT MYSQLCPPCONN_LIBRARY)
+    message(FATAL_ERROR
+        "Legacy MySQL Connector/C++ was not found. Install or build Connector/C++ 1.1, then set "
+        "-DMYSQL_CONNECTOR_CPP_ROOT=/path/to/connector-prefix. Required files are "
+        "cppconn/connection.h, mysql_driver.h, and libmysqlcppconn.")
+endif()
+
+if(NOT MYSQL_CLIENT_INCLUDE_DIR OR NOT MYSQL_CLIENT_LIBRARY)
+    message(FATAL_ERROR
+        "A MySQL-compatible C client development library was not found. Install MariaDB/MySQL "
+        "development headers that provide mysql/mysql.h and libmariadb or libmysqlclient.")
+endif()
+
 set(RAFT_KV_ROOT "${PROJECT_SOURCE_DIR}/../raft_KV")
 find_path(RAFT_KV_CLERK_INCLUDE_DIR clerk.h
     PATHS "${RAFT_KV_ROOT}/src/raftClerk/include"
@@ -50,15 +97,10 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/HttpServer/include
     ${PROJECT_SOURCE_DIR}/WebApps/GomokuServer/include
     ${RAFT_KV_CLERK_INCLUDE_DIR}
-    /usr/include/mysql-cppconn-8
-    /usr/include/mysql
     ${OPENSSL_INCLUDE_DIR}
-)
-
-# 查找必要的库
-find_library(MYSQLCPPCONN_LIBRARY
-    NAMES mysqlcppconn mysqlcppconn8
-    PATHS /usr/lib /usr/lib64 /usr/local/lib
+    ${MYSQLCPPCONN_INCLUDE_DIR}
+    ${MYSQLCPPCONN_DRIVER_INCLUDE_DIR}
+    ${MYSQL_CLIENT_INCLUDE_DIR}
 )
 
 # 添加所有源文件
@@ -104,8 +146,8 @@ target_link_libraries(simple_server
     pthread
     muduo_net
     muduo_base
-    mysqlcppconn
-    mysqlclient
+    ${MYSQLCPPCONN_LIBRARY}
+    ${MYSQL_CLIENT_LIBRARY}
     ssl
     crypto
     ${RAFT_KV_CLIENT_LIBRARY}
@@ -114,6 +156,9 @@ target_link_libraries(simple_server
     protobuf::libprotobuf
     Boost::serialization
 )
+
+get_filename_component(MYSQLCPPCONN_LIBRARY_DIR "${MYSQLCPPCONN_LIBRARY}" DIRECTORY)
+set_target_properties(simple_server PROPERTIES BUILD_RPATH "${MYSQLCPPCONN_LIBRARY_DIR}")
 
 target_include_directories(simple_server PRIVATE ${RAFT_KV_INCLUDE_DIRS})
 

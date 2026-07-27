@@ -17,8 +17,19 @@ readonly HTTP_PID_FILE="$RUNTIME_DIR/http.pid"
 readonly TLS_CERT_DIR="${TLS_CERT_DIR:-$RUNTIME_DIR/certs}"
 readonly TLS_CERTIFICATE="${TLS_CERTIFICATE:-$TLS_CERT_DIR/server.crt}"
 readonly TLS_PRIVATE_KEY="${TLS_PRIVATE_KEY:-$TLS_CERT_DIR/server.key}"
+readonly DATABASE_ENV_FILE="${DATABASE_ENV_FILE:-$RUNTIME_DIR/gomoku-db.env}"
 
 mkdir -p "$RUNTIME_DIR"
+
+if [[ ! -r "$DATABASE_ENV_FILE" ]]; then
+  echo "Database environment is missing; run scripts/init-local-mariadb.sh first" >&2
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$DATABASE_ENV_FILE"
+set +a
 
 if [[ -s "$HTTP_PID_FILE" ]] && kill -0 "$(<"$HTTP_PID_FILE")" 2>/dev/null; then
   echo "HTTP application is already running; stop it before starting another instance" >&2
