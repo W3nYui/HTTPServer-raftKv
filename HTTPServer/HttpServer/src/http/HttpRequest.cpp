@@ -74,6 +74,7 @@ std::string HttpRequest::getQueryParameters(const std::string &key) const
 void HttpRequest::setQueryParameters(const char *start, const char *end)
 {
     std::string argumentStr(start, end);
+    queryString_ = argumentStr;
     std::string::size_type pos = 0;
     std::string::size_type prev = 0;
 
@@ -137,6 +138,7 @@ void HttpRequest::swap(HttpRequest &that)
     std::swap(path_, that.path_);
     std::swap(pathParameters_, that.pathParameters_);
     std::swap(queryParameters_, that.queryParameters_);
+    std::swap(queryString_, that.queryString_);
     std::swap(version_, that.version_);
     std::swap(headers_, that.headers_);
     std::swap(receiveTime_, that.receiveTime_);

@@ -45,9 +45,8 @@ SslConnection::SslConnection(const TcpConnectionPtr& conn, SslContext* ctx)
     // 设置为服务器模式（接受SSL连接）
     SSL_set_accept_state(ssl_);
     
-    // 设置SSL模式：允许部分写入和移动写缓冲区
+    // 设置SSL模式：允许移动写缓冲区。不允许部分写入，避免响应被截断。
     SSL_set_mode(ssl_, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-    SSL_set_mode(ssl_, SSL_MODE_ENABLE_PARTIAL_WRITE);
 }
 
 SslConnection::~SslConnection() 
@@ -137,9 +136,9 @@ void SslConnection::send(const void* data, size_t len)
     
     // SSL_write将明文数据加密，加密后的数据存入writeBio
     int written = SSL_write(ssl_, data, len);
-    if (written <= 0) {
+    if (written != static_cast<int>(len)) {
         int err = SSL_get_error(ssl_, written);
-        LOG_ERROR << "SSL_write failed: " << err;
+        LOG_ERROR << "SSL_write failed to consume the complete response: " << err;
         return;
     }
     

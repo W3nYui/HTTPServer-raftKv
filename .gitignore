@@ -1,3 +1,8 @@
 HTTPServer/build-codex-*/
 raft_KV/build-codex-*/
+HTTPServer/build/
+raft_KV/build/
+raft_KV/build-codex/
+raft_KV/bin/
+raft_KV/lib/
 runtime/

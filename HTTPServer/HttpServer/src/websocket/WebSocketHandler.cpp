@@ -1,19 +1,12 @@
 #include "../../include/websocket/WebSocketHandler.h"
-#include "../../include/websocket/WebSocketFrame.h"
-
-#include <muduo/base/Logging.h>
-
 namespace http
 {
 namespace websocket
 {
 
-void WebSocketHandler::onPing(const TcpConnectionPtr& conn, const std::string& payload)
+void WebSocketHandler::onPing(const TcpConnectionPtr&, const std::string&)
 {
-    // 自动回复 Pong
-    auto pongFrame = WebSocketFrame::createFrame(WebSocketOpCode::Pong, payload, false);
-    std::string wireData = pongFrame.encodeToString();
-    conn->send(wireData);
+    // WebSocketServer sends the Pong through the transport callback before this hook runs.
 }
 
 void WebSocketHandler::onPong(const TcpConnectionPtr& conn, const std::string& payload)

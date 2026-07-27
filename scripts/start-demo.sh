@@ -8,10 +8,15 @@ readonly BUILD_ID="$(printf '%s' "$ROOT_DIR" | sha256sum | cut -c1-12)"
 readonly RAFT_RUNNER="${RAFT_RUNNER:-$ROOT_DIR/raft_KV/bin/raftCoreRun}"
 readonly HTTP_BUILD_DIR="${HTTP_BUILD_DIR:-$ROOT_DIR/HTTPServer/build-codex-$BUILD_ID}"
 readonly HTTP_SERVER="${HTTP_SERVER:-$HTTP_BUILD_DIR/simple_server}"
+readonly HTTP_PORT="${HTTP_PORT:-8080}"
+readonly HTTPS_PORT="${HTTPS_PORT:-8443}"
 readonly RAFT_CONFIG="$RUNTIME_DIR/raft-nodes.conf"
 readonly RAFT_PID_FILE="$RUNTIME_DIR/raft.pid"
 readonly RAFT_NODE_PID_FILE="$RUNTIME_DIR/raft-node-pids"
 readonly HTTP_PID_FILE="$RUNTIME_DIR/http.pid"
+readonly TLS_CERT_DIR="${TLS_CERT_DIR:-$RUNTIME_DIR/certs}"
+readonly TLS_CERTIFICATE="${TLS_CERTIFICATE:-$TLS_CERT_DIR/server.crt}"
+readonly TLS_PRIVATE_KEY="${TLS_PRIVATE_KEY:-$TLS_CERT_DIR/server.key}"
 
 mkdir -p "$RUNTIME_DIR"
 
@@ -23,6 +28,10 @@ fi
 if [[ ! -x "$RAFT_RUNNER" || ! -x "$HTTP_SERVER" ]]; then
   echo "Build the demo first with scripts/build.sh" >&2
   exit 1
+fi
+
+if [[ ! -s "$TLS_CERTIFICATE" || ! -s "$TLS_PRIVATE_KEY" ]]; then
+  CERT_DIR="$TLS_CERT_DIR" "$ROOT_DIR/scripts/generate-dev-cert.sh"
 fi
 
 if [[ -s "$RAFT_PID_FILE" ]] && kill -0 "$(<"$RAFT_PID_FILE")" 2>/dev/null; then
@@ -64,7 +73,8 @@ done <"$RAFT_NODE_PID_FILE"
 
 (
   cd "$HTTP_BUILD_DIR"
-  exec setsid "$HTTP_SERVER" -p 8080 -r "$RAFT_CONFIG"
+  exec setsid "$HTTP_SERVER" -p "$HTTP_PORT" -P "$HTTPS_PORT" -r "$RAFT_CONFIG" \
+    -c "$TLS_CERTIFICATE" -k "$TLS_PRIVATE_KEY"
 ) >"$RUNTIME_DIR/http.log" 2>&1 &
 http_pid=$!
 printf '%s\n' "$http_pid" >"$HTTP_PID_FILE"
@@ -75,4 +85,5 @@ if ! kill -0 "$http_pid" 2>/dev/null; then
   exit 1
 fi
 
-printf 'Demo started: http://127.0.0.1:8080\nRaft config: %s\n' "$RAFT_CONFIG"
+printf 'Demo started: http://127.0.0.1:%s redirects to https://127.0.0.1:%s\nRaft config: %s\n' \
+  "$HTTP_PORT" "$HTTPS_PORT" "$RAFT_CONFIG"

@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <functional>
 
 #include <muduo/net/TcpConnection.h>
 #include <muduo/net/Buffer.h>
@@ -36,8 +37,14 @@ class WebSocketServer : muduo::noncopyable
 {
 public:
     using TcpConnectionPtr = muduo::net::TcpConnectionPtr;
+    using SendCallback = std::function<void(const TcpConnectionPtr&, const std::string&)>;
 
     WebSocketServer() = default;
+
+    void setSendCallback(SendCallback callback)
+    {
+        sendCallback_ = std::move(callback);
+    }
 
     /**
      * @brief 执行 WebSocket 升级握手
@@ -102,6 +109,7 @@ private:
      * @brief 验证 WebSocket 升级请求的有效性
      */
     bool validateUpgradeRequest(const HttpRequest& req) const;
+    void sendWireData(const TcpConnectionPtr& conn, const std::string& wireData) const;
 
     // 连接名 -> WebSocket 上下文
     std::unordered_map<std::string, WebSocketContext>  contexts_;
@@ -109,6 +117,7 @@ private:
     std::unordered_map<std::string, WebSocketHandlerPtr> handlers_;
     // 连接名 -> TCP 连接（用于发送消息）
     std::unordered_map<std::string, TcpConnectionPtr>   connections_;
+    SendCallback                                         sendCallback_;
 
     mutable std::mutex mutex_;
 };

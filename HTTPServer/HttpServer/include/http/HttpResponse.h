@@ -18,6 +18,7 @@ public:
         k200Ok = 200, // 成功
         k204NoContent = 204, // 无内容
         k301MovedPermanently = 301, // 永久重定向
+        k308PermanentRedirect = 308, // 保留请求方法的永久重定向
         k400BadRequest = 400, // 请求错误
         k401Unauthorized = 401, // 未授权
         k403Forbidden = 403, // 无权访问该网页资源

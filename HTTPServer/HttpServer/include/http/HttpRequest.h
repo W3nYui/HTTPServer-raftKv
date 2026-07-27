@@ -37,6 +37,7 @@ public:
 
     void setQueryParameters(const char* start, const char* end);
     std::string getQueryParameters(const std::string &key) const;
+    std::string queryString() const { return queryString_; }
     
     void setVersion(std::string v)
     {
@@ -92,6 +93,7 @@ private:
     std::string                                  path_; // 请求路径
     std::unordered_map<std::string, std::string> pathParameters_; // 路径参数
     std::unordered_map<std::string, std::string> queryParameters_; // 查询参数
+    std::string                                  queryString_;
     muduo::Timestamp                             receiveTime_; // 接收时间
     std::map<std::string, std::string>           headers_; // 请求头
     std::string                                  content_; // 请求体

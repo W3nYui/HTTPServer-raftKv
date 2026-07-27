@@ -17,7 +17,7 @@ namespace session
 class SessionManager
 {
 public:
-    explicit SessionManager(std::unique_ptr<SessionStorage> storage);
+    explicit SessionManager(std::unique_ptr<SessionStorage> storage, bool secureCookies = false);
 
     // 从请求中获取或创建会话
     std::shared_ptr<Session> getSession(const HttpRequest& req, HttpResponse* resp);
@@ -41,6 +41,7 @@ private:
 private:
     std::unique_ptr<SessionStorage> storage_;
     std::mt19937 rng_; // 用于生成随机会话id
+    bool secureCookies_;
 };
 
 } // namespace session

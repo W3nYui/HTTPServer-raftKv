@@ -141,7 +141,7 @@ void WebSocketServer::processFrame(const TcpConnectionPtr& conn, muduo::net::Buf
                 {
                     auto pongFrame = WebSocketFrame::createFrame(
                         WebSocketOpCode::Pong, frame->payload(), false);
-                    conn->send(pongFrame.encodeToString());
+                    sendWireData(conn, pongFrame.encodeToString());
                 }
                 handler->onPing(conn, frame->payload());
                 break;
@@ -155,7 +155,7 @@ void WebSocketServer::processFrame(const TcpConnectionPtr& conn, muduo::net::Buf
                 {
                     auto closeFrame = WebSocketFrame::createFrame(
                         WebSocketOpCode::Close, "", false);
-                    conn->send(closeFrame.encodeToString());
+                    sendWireData(conn, closeFrame.encodeToString());
                 }
                 handler->onClose(conn);
                 removeConnection(conn);
@@ -172,7 +172,7 @@ void WebSocketServer::sendMessage(const TcpConnectionPtr& conn, const std::strin
 {
     auto frame = WebSocketFrame::createFrame(WebSocketOpCode::Text, message, false);
     std::string wireData = frame.encodeToString();
-    conn->send(wireData);
+    sendWireData(conn, wireData);
 }
 
 // ========== 关闭连接 ==========
@@ -181,7 +181,7 @@ void WebSocketServer::closeConnection(const TcpConnectionPtr& conn)
     // 发送 Close 帧
     auto closeFrame = WebSocketFrame::createFrame(WebSocketOpCode::Close, "", false);
     std::string wireData = closeFrame.encodeToString();
-    conn->send(wireData);
+    sendWireData(conn, wireData);
 
     // 通知 handler
     WebSocketHandlerPtr handler;
@@ -225,6 +225,16 @@ WebSocketHandlerPtr WebSocketServer::getHandler(const TcpConnectionPtr& conn) co
     auto it = handlers_.find(conn->name());
     if (it != handlers_.end()) return it->second;
     return nullptr;
+}
+
+void WebSocketServer::sendWireData(const TcpConnectionPtr& conn, const std::string& wireData) const
+{
+    if (sendCallback_)
+    {
+        sendCallback_(conn, wireData);
+        return;
+    }
+    conn->send(wireData);
 }
 
 } // namespace websocket

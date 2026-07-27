@@ -1,58 +1,106 @@
-#include <string>
 #include <iostream>
-#include <muduo/net/TcpServer.h>
+#include <string>
+#include <thread>
+
 #include <muduo/base/Logging.h>
-#include <muduo/net/EventLoop.h>
+#include <muduo/net/TcpServer.h>
 
 #include "../include/GomokuServer.h"
 #include "../include/RaftGameStateStore.h"
+#include "../../../HttpServer/include/http/HttpServer.h"
+
+namespace
+{
+void startHttpRedirectServer(int httpPort, int httpsPort)
+{
+  http::HttpServer redirectServer(httpPort, "Gomoku HTTP redirect");
+  redirectServer.setHttpCallback([httpsPort](const http::HttpRequest& req, http::HttpResponse* resp) {
+    resp->setStatusLine(req.getVersion(), http::HttpResponse::k308PermanentRedirect, "Permanent Redirect");
+    resp->setCloseConnection(true);
+    resp->setContentLength(0);
+    std::string location = "https://127.0.0.1:" + std::to_string(httpsPort) + req.path();
+    if (!req.queryString().empty())
+    {
+      location += "?" + req.queryString();
+    }
+    resp->addHeader("Location", location);
+    resp->addHeader("Cache-Control", "no-store");
+  });
+  redirectServer.start();
+}
+} // namespace
 
 int main(int argc, char* argv[])
 {
-  // 利用muduo的日志输出当前pid
   LOG_INFO << "pid = " << getpid();
-  std::string serverName = "Simple HttpServer";
-  int port = 80;
+
+  int httpPort = 8080;
+  int httpsPort = 8443;
   std::string raftConfig;
-  
-  // 参数解析
+  std::string certificateFile;
+  std::string privateKeyFile;
+
   int opt;
-  bool useSSL = false;
-  const char* str = "p:sr:";
-  while ((opt = getopt(argc, argv, str)) != -1) // getopt函数会返回当前解析到的选项字符，如果没有更多选项可供解析，则返回-1
+  const char* options = "p:P:r:c:k:";
+  while ((opt = getopt(argc, argv, options)) != -1)
   {
     switch (opt)
     {
       case 'p':
-      {
-        port = atoi(optarg); // 如果命令行调用参数为 -p + 端口号，则optarg会指向该端口号字符串，atoi函数将其转换为整数并赋值给port变量
+        httpPort = atoi(optarg);
         break;
-      }
-      case 's':
-      {
-        useSSL = true;
+      case 'P':
+        httpsPort = atoi(optarg);
         break;
-      }
       case 'r':
-      {
         raftConfig = optarg;
         break;
-      }
+      case 'c':
+        certificateFile = optarg;
+        break;
+      case 'k':
+        privateKeyFile = optarg;
+        break;
       default:
         break;
     }
   }
+
   if (raftConfig.empty())
   {
     LOG_ERROR << "Raft config is required: start with -r <raft-nodes.conf>";
     return 1;
   }
-  muduo::net::TcpServer::Option option = muduo::net::TcpServer::kNoReusePort; // 默认不复用端口，避免端口冲突
-  // muduo::net::TcpServer::Option option = muduo::net::TcpServer::kReusePort; //option : reuse 允许多个进程绑定同一端口，适用于多线程服务器，提升性能
-  muduo::Logger::setLogLevel(muduo::Logger::WARN); // 设定日志级别为WARN，减少日志输出量
+  if (certificateFile.empty() || privateKeyFile.empty())
+  {
+    LOG_ERROR << "TLS certificate and private key are required: start with -c <server.crt> -k <server.key>";
+    return 1;
+  }
+  if (httpPort <= 0 || httpsPort <= 0 || httpPort == httpsPort)
+  {
+    LOG_ERROR << "HTTP and HTTPS ports must be distinct positive values";
+    return 1;
+  }
+
+  muduo::Logger::setLogLevel(muduo::Logger::WARN);
+  const auto option = muduo::net::TcpServer::kNoReusePort;
   auto raftClient = std::make_shared<ClerkRaftGameStateClient>(raftConfig);
   auto gameStateStore = std::make_unique<RaftGameStateStore>(std::move(raftClient));
-  GomokuServer server(port, serverName, useSSL, std::move(gameStateStore), option); // 创建HTTP服务器实例 设定端口号与服务器名称 并调用构造函数内的初始化 初始化网络层
-  server.setThreadNum(4); // 设置服务器线程数为4，允许服务器同时处理多个请求，提高性能
+
+  std::thread([httpPort, httpsPort] {
+    try
+    {
+      startHttpRedirectServer(httpPort, httpsPort);
+    }
+    catch (const std::exception& error)
+    {
+      LOG_ERROR << "HTTP redirect server stopped: " << error.what();
+    }
+  }).detach();
+
+  GomokuServer server(httpsPort, "Gomoku HTTPS server", true, std::move(gameStateStore),
+                      certificateFile, privateKeyFile, option);
+  // TLS state is connection-affine; one I/O loop keeps local PVP sockets serialized.
+  server.setThreadNum(1);
   server.start();
 }

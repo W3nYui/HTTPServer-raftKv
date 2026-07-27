@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -19,8 +20,14 @@ class ChatManager
 {
 public:
     using TcpConnectionPtr = muduo::net::TcpConnectionPtr;
+    using MessageSender = std::function<void(const TcpConnectionPtr&, const std::string&)>;
 
     ChatManager() = default;
+
+    void setMessageSender(MessageSender sender)
+    {
+        messageSender_ = std::move(sender);
+    }
 
     // ========== 大厅管理 ==========
 
@@ -64,7 +71,7 @@ public:
     /**
      * @brief 发送系统消息给单个用户
      */
-    static void sendSystemMessage(const TcpConnectionPtr& conn, const std::string& message);
+    void sendSystemMessage(const TcpConnectionPtr& conn, const std::string& message);
 
     /**
      * @brief 获取在线大厅连接数
@@ -75,9 +82,10 @@ private:
     /**
      * @brief 发送 WebSocket 文本消息（序列化为 JSON 后发送）
      */
-    static void sendJsonMessage(const TcpConnectionPtr& conn, const std::string& jsonStr);
+    void sendJsonMessage(const TcpConnectionPtr& conn, const std::string& jsonStr) const;
 
     // userId -> WebSocket 连接（大厅在线用户）
     std::unordered_map<int, TcpConnectionPtr> lobbyConnections_;
     mutable std::mutex mutex_;
+    MessageSender messageSender_;
 };

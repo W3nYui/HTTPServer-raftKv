@@ -168,6 +168,50 @@ target_include_directories(database_config_test PRIVATE WebApps/GomokuServer/inc
 
 add_test(NAME database_config_test COMMAND database_config_test)
 
+add_executable(session_cookie_security_test
+    WebApps/GomokuServer/test/test_session_cookie_security.cpp
+    HttpServer/src/http/HttpRequest.cpp
+    HttpServer/src/http/HttpResponse.cpp
+    HttpServer/src/session/Session.cpp
+    HttpServer/src/session/SessionManager.cpp
+    HttpServer/src/session/SessionStorage.cpp
+)
+
+target_include_directories(session_cookie_security_test PRIVATE HttpServer/include)
+target_link_libraries(session_cookie_security_test muduo_net muduo_base)
+
+add_test(NAME session_cookie_security_test COMMAND session_cookie_security_test)
+
+add_executable(http_tls_transport_test
+    WebApps/GomokuServer/test/test_http_tls_transport.cpp
+    HttpServer/src/http/HttpContext.cpp
+    HttpServer/src/http/HttpRequest.cpp
+    HttpServer/src/http/HttpResponse.cpp
+    HttpServer/src/http/HttpServer.cpp
+    HttpServer/src/middleware/MiddlewareChain.cpp
+    HttpServer/src/middleware/cors/CorsMiddleware.cpp
+    HttpServer/src/middleware/logging/RequestLoggingMiddleware.cpp
+    HttpServer/src/middleware/ratelimiter/RateLimiterMiddleware.cpp
+    HttpServer/src/middleware/ratelimiter/SlidingWindow.cpp
+    HttpServer/src/middleware/ratelimiter/TokenBucket.cpp
+    HttpServer/src/router/Router.cpp
+    HttpServer/src/session/Session.cpp
+    HttpServer/src/session/SessionManager.cpp
+    HttpServer/src/session/SessionStorage.cpp
+    HttpServer/src/ssl/SslConfig.cpp
+    HttpServer/src/ssl/SslConnection.cpp
+    HttpServer/src/ssl/SslContext.cpp
+    HttpServer/src/websocket/WebSocketContext.cpp
+    HttpServer/src/websocket/WebSocketFrame.cpp
+    HttpServer/src/websocket/WebSocketHandler.cpp
+    HttpServer/src/websocket/WebSocketServer.cpp
+)
+
+target_include_directories(http_tls_transport_test PRIVATE HttpServer/include)
+target_link_libraries(http_tls_transport_test pthread muduo_net muduo_base ssl crypto)
+
+add_test(NAME http_tls_transport_test COMMAND http_tls_transport_test)
+
 find_program(NODE_EXECUTABLE node)
 if(NODE_EXECUTABLE)
     add_test(NAME pvp_frontend_smoke_test

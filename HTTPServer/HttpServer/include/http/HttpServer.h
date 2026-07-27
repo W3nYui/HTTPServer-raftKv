@@ -145,6 +145,7 @@ public:
     }
 
 private:
+    void sendData(const muduo::net::TcpConnectionPtr& conn, const void* data, size_t len);
     void initialize();
 
     void onConnection(const muduo::net::TcpConnectionPtr& conn);

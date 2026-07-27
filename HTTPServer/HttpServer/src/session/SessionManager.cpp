@@ -9,9 +9,10 @@ namespace session
 {
 
 // 初始化会话管理器，设置会话存储对象和随机数生成器
-SessionManager::SessionManager(std::unique_ptr<SessionStorage> storage)
+SessionManager::SessionManager(std::unique_ptr<SessionStorage> storage, bool secureCookies)
     : storage_(std::move(storage)) 
     , rng_(std::random_device{}()) // 初始化随机数生成器，用于生成随机的会话ID
+    , secureCookies_(secureCookies)
 {}
 
 // 从请求中获取或创建会话，也就是说，如果请求中包含会话ID，则从存储中加载会话，否则创建一个新的会话
@@ -105,7 +106,11 @@ std::string SessionManager::getSessionIdFromCookie(const HttpRequest& req)
 void SessionManager::setSessionCookie(const std::string& sessionId, HttpResponse* resp)
 {
     // 设置会话ID到响应头中，作为Cookie
-    std::string cookie = "sessionId=" + sessionId + "; Path=/; HttpOnly";
+    std::string cookie = "sessionId=" + sessionId + "; Path=/; HttpOnly; SameSite=Lax";
+    if (secureCookies_)
+    {
+        cookie += "; Secure";
+    }
     resp->addHeader("Set-Cookie", cookie);
 }
 

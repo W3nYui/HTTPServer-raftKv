@@ -26,22 +26,30 @@ GomokuServer::GomokuServer(int port,
                            const std::string &name,
                            bool useSSL,
                            std::unique_ptr<GameStateStore> gameStateStore,
+                           std::string certificateFile,
+                           std::string privateKeyFile,
                            muduo::net::TcpServer::Option option)
     : httpServer_(port, name, useSSL, option),
       maxOnline_(0),
-      gameStateStore_(std::move(gameStateStore)) // 这里httpServer_是muduo的HttpServer实例，用于处理HTTP请求 但是传参不匹配
+      gameStateStore_(std::move(gameStateStore)), // 这里httpServer_是muduo的HttpServer实例，用于处理HTTP请求 但是传参不匹配
+      useSSL_(useSSL)
 {
     if (!gameStateStore_) throw std::invalid_argument("PVP game state store is required");
     pvpGameService_ = std::make_unique<PvpGameService>(*gameStateStore_);
     recoverActiveGameRooms();
     initialize(); // 初始化会话管理、中间件管理、路由
+    chatManager_.setMessageSender([this](const muduo::net::TcpConnectionPtr& conn, const std::string& message) {
+        httpServer_.getWsServer().sendMessage(conn, message);
+    });
     if (useSSL)
     {
+        if (certificateFile.empty() || privateKeyFile.empty())
+        {
+            throw std::invalid_argument("TLS certificate and private key are required");
+        }
         ssl::SslConfig sslConfig;
-        // 使用绝对路径确保在任何工作目录下都能找到证书文件
-        sslConfig.setCertificateFile("/home/w3nyui/Learning/HTTPServer/certs/server.crt");
-        sslConfig.setPrivateKeyFile("/home/w3nyui/Learning/HTTPServer/certs/server.key");
-        sslConfig.setCertificateChainFile("/home/w3nyui/Learning/HTTPServer/certs/ca.crt");
+        sslConfig.setCertificateFile(certificateFile);
+        sslConfig.setPrivateKeyFile(privateKeyFile);
         sslConfig.setProtocolVersion(ssl::SSLVersion::TLS_1_2);
         sslConfig.setCipherList("HIGH:!aNULL:!MD5");
         sslConfig.setVerifyClient(false);
@@ -98,7 +106,7 @@ void GomokuServer::initializeSession()
     // 创建会话存储类对象
     auto sessionStorage = std::make_unique<http::session::MemorySessionStorage>();
     // 创建会话管理器 管理会话存储类 即对外接口
-    auto sessionManager = std::make_unique<http::session::SessionManager>(std::move(sessionStorage));
+    auto sessionManager = std::make_unique<http::session::SessionManager>(std::move(sessionStorage), useSSL_);
     // 设置会话管理器
     setSessionManager(std::move(sessionManager));
 }

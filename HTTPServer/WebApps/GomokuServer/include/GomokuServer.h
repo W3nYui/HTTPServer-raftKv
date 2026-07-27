@@ -41,6 +41,8 @@ public:
                  const std::string& name,
                  bool useSSL,
                  std::unique_ptr<GameStateStore> gameStateStore,
+                 std::string certificateFile = {},
+                 std::string privateKeyFile = {},
                  muduo::net::TcpServer::Option option = muduo::net::TcpServer::kNoReusePort); // 默认不复用端口
 
     void setThreadNum(int numThreads);
@@ -194,4 +196,5 @@ private:
     mutable std::mutex                               mutexForGameRooms_;
     // WebSocket 消息处理器
     std::shared_ptr<GameWsHandler>                   wsHandler_;
+    bool                                              useSSL_;
 };

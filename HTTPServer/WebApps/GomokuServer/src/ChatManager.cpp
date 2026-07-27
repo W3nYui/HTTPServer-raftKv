@@ -1,5 +1,4 @@
 #include "../include/ChatManager.h"
-#include "../../../HttpServer/include/websocket/WebSocketFrame.h"
 #include "../../../HttpServer/include/utils/JsonUtil.h"
 
 #include <chrono>
@@ -95,9 +94,10 @@ size_t ChatManager::getLobbyCount() const
 }
 
 // ========== 底层发送 ==========
-void ChatManager::sendJsonMessage(const TcpConnectionPtr& conn, const std::string& jsonStr)
+void ChatManager::sendJsonMessage(const TcpConnectionPtr& conn, const std::string& jsonStr) const
 {
-    auto frame = WebSocketFrame::createFrame(WebSocketOpCode::Text, jsonStr, false);
-    std::string wireData = frame.encodeToString();
-    conn->send(wireData);
+    if (messageSender_)
+    {
+        messageSender_(conn, jsonStr);
+    }
 }

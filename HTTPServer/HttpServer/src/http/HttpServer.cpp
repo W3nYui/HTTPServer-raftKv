@@ -26,6 +26,9 @@ HttpServer::HttpServer(int port,
     , httpCallback_(std::bind(&HttpServer::handleRequest, this, std::placeholders::_1, std::placeholders::_2)) // 注册路由匹配函数的回调函数
 {
     initialize();
+    wsServer_.setSendCallback([this](const muduo::net::TcpConnectionPtr& conn, const std::string& data) {
+        sendData(conn, data.data(), data.size());
+    });
 }
 
 // 服务器运行函数
@@ -98,25 +101,9 @@ void HttpServer::onMessage(const muduo::net::TcpConnectionPtr &conn,
                            muduo::net::Buffer *buf,
                            muduo::Timestamp receiveTime)
 {
-    // 如果该连接已升级为 WebSocket，则走 WebSocket 帧处理流程
-    if (wsServer_.isWebSocket(conn))
-    {
-        try
-        {
-            wsServer_.processFrame(conn, buf);
-        }
-        catch (const std::exception& e)
-        {
-            LOG_ERROR << "WebSocket processFrame error: " << e.what();
-            wsServer_.removeConnection(conn);
-            conn->shutdown();
-        }
-        return;
-    }
-
     try
     {
-        // 这层判断只是代表是否支持ssl
+        // TLS must be decoded before checking for an upgraded WebSocket connection.
         if (useSSL_)
         {
             // 1.查找对应的SSL连接
@@ -141,14 +128,20 @@ void HttpServer::onMessage(const muduo::net::TcpConnectionPtr &conn,
                 buf = decryptedBuf; // 将 buf 指向解密后的数据
             }
         }
+        if (wsServer_.isWebSocket(conn))
+        {
+            wsServer_.processFrame(conn, buf);
+            return;
+        }
         // HttpContext对象用于解析出buf中的请求报文，并把报文的关键信息封装到HttpRequest对象中
         // 这里获取的是conn内的HttpContext对象 因此用指针来操作 其中管理了一个http的上下文状态
         HttpContext *context = boost::any_cast<HttpContext>(conn->getMutableContext());
         if (!context->parseRequest(buf, receiveTime)) // 解析一个http请求 并存储到httpcontext中的request对象中
         {
             // 如果解析http报文过程中出错
-            conn->send("HTTP/1.1 400 Bad Request\r\n\r\n");
+            sendData(conn, "HTTP/1.1 400 Bad Request\r\n\r\n", 28);
             conn->shutdown();
+            return;
         }
         // 如果buf缓冲区中解析出一个完整的数据包才封装响应报文 完全解析才会封装 否则等待下一次的数据到达 进行封装
         if (context->gotAll())
@@ -156,14 +149,10 @@ void HttpServer::onMessage(const muduo::net::TcpConnectionPtr &conn,
             onRequest(conn, context->request()); // 执行响应函数
             context->reset(); // 重置http请求的上下文状态 以及保存的http请求数据
             
-            // 清空SSL解密缓冲区，避免数据累积
-            if (useSSL_)
+            // An Upgrade request can arrive in the same TLS record as the first WebSocket frame.
+            if (wsServer_.isWebSocket(conn) && buf->readableBytes() > 0)
             {
-                auto it = sslConns_.find(conn);
-                if (it != sslConns_.end())
-                {
-                    it->second->getDecryptedBuffer()->retrieveAll();
-                }
+                wsServer_.processFrame(conn, buf);
             }
         }
     }
@@ -171,7 +160,7 @@ void HttpServer::onMessage(const muduo::net::TcpConnectionPtr &conn,
     {
         // 捕获异常，返回错误信息
         LOG_ERROR << "Exception in onMessage: " << e.what();
-        conn->send("HTTP/1.1 400 Bad Request\r\n\r\n");
+        sendData(conn, "HTTP/1.1 400 Bad Request\r\n\r\n", 28);
         conn->shutdown();
     }
 }
@@ -198,28 +187,26 @@ void HttpServer::onRequest(const muduo::net::TcpConnectionPtr &conn, const HttpR
     response.appendToBuffer(&buf);
     LOG_INFO << "Sending response:\n" << buf.toStringPiece().as_string();
 
-    // ssl加密发送响应 或 普通发送响应
-    if (useSSL_)
-    {
-        auto it = sslConns_.find(conn);
-        if (it != sslConns_.end())
-        {
-            it->second->send(buf.peek(), buf.readableBytes());
-        }
-        else
-        {
-            conn->send(&buf);
-        }
-    }
-    else
-    {
-        conn->send(&buf);
-    }
+    sendData(conn, buf.peek(), buf.readableBytes());
 
     if (response.closeConnection())
     {
         conn->shutdown();
     }
+}
+
+void HttpServer::sendData(const muduo::net::TcpConnectionPtr& conn, const void* data, size_t len)
+{
+    if (useSSL_)
+    {
+        auto it = sslConns_.find(conn);
+        if (it != sslConns_.end())
+        {
+            it->second->send(data, len);
+            return;
+        }
+    }
+    conn->send(data, len);
 }
 
 // 执行请求对应的路由处理函数
