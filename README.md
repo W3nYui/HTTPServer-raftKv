@@ -10,7 +10,7 @@
 - `HTTPS`：`https://127.0.0.1:8443`，提供页面、登录和会话。
 - `WebSocket`：HTTPS 页面自动建立 `wss://127.0.0.1:8443/ws`，用于匹配、落子、状态同步和聊天。
 
-完整的数据流和面试复习要点见 [docs/data-flow.md](docs/data-flow.md)。
+完整的数据流见 [docs/data-flow.md](docs/data-flow.md)。
 
 ## 前置条件
 
